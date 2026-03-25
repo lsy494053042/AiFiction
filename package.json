@@ -1,0 +1,25 @@
+{
+  "name": "aifiction",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal workspace for long-form web novel pipelines",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace @aifiction/web run dev",
+    "dev:worker": "npm --workspace @aifiction/worker run dev",
+    "db:bootstrap": "npm --workspace @aifiction/data run db:bootstrap",
+    "db:generate": "npm --workspace @aifiction/data run db:generate",
+    "db:v2-smoke": "npm --workspace @aifiction/data run db:v2-smoke",
+    "db:check": "npm --workspace @aifiction/data run typecheck",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.10",
+    "drizzle-orm": "^0.45.1"
+  }
+}
+

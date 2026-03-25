@@ -1,0 +1,82 @@
+﻿import {
+  guardrailProfilesV2Table,
+  novelProjectsV2Table,
+  projectProfilesV2Table,
+  projectTagsV2Table,
+} from "./project-schema";
+import {
+  chapterScenesV2Table,
+  chaptersV2Table,
+  characterAliasesV2Table,
+  characterRelationshipsV2Table,
+  charactersV2Table,
+  entityStateSnapshotsV2Table,
+  foreshadowLinksV2Table,
+  foreshadowsV2Table,
+  timelineEventsV2Table,
+  volumesV2Table,
+  worldRulesV2Table,
+} from "./narrative-schema";
+import {
+  artifactsV2Table,
+  artifactVersionsV2Table,
+  pipelineRunsV2Table,
+  pipelineRunStepsV2Table,
+  promptTemplatesV2Table,
+  promptTemplateVersionsV2Table,
+} from "./runtime-schema";
+
+export {
+  guardrailProfilesV2Table,
+  novelProjectsV2Table,
+  projectProfilesV2Table,
+  projectTagsV2Table,
+  chapterScenesV2Table,
+  chaptersV2Table,
+  characterAliasesV2Table,
+  characterRelationshipsV2Table,
+  charactersV2Table,
+  entityStateSnapshotsV2Table,
+  foreshadowLinksV2Table,
+  foreshadowsV2Table,
+  timelineEventsV2Table,
+  volumesV2Table,
+  worldRulesV2Table,
+  artifactsV2Table,
+  artifactVersionsV2Table,
+  pipelineRunsV2Table,
+  pipelineRunStepsV2Table,
+  promptTemplatesV2Table,
+  promptTemplateVersionsV2Table,
+};
+
+/**
+ * V2 表结构总导出。
+ * 后续如果要单独创建 V2 client、生成迁移或做模块化测试，可以直接复用这一份聚合对象。
+ */
+export const v2Schema = {
+  novelProjectsV2Table,
+  projectProfilesV2Table,
+  guardrailProfilesV2Table,
+  projectTagsV2Table,
+  worldRulesV2Table,
+  charactersV2Table,
+  characterAliasesV2Table,
+  characterRelationshipsV2Table,
+  volumesV2Table,
+  chaptersV2Table,
+  chapterScenesV2Table,
+  foreshadowsV2Table,
+  foreshadowLinksV2Table,
+  timelineEventsV2Table,
+  entityStateSnapshotsV2Table,
+  artifactsV2Table,
+  artifactVersionsV2Table,
+  pipelineRunsV2Table,
+  pipelineRunStepsV2Table,
+  promptTemplatesV2Table,
+  promptTemplateVersionsV2Table,
+};
+
+export * from "./bootstrap";
+

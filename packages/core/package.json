@@ -1,0 +1,11 @@
+{
+  "name": "@aifiction/core",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@aifiction/prompts": "0.1.0",
+    "@aifiction/schemas": "0.1.0"
+  }
+}

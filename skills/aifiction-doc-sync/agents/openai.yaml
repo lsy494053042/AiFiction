@@ -1,0 +1,4 @@
+interface:
+  display_name: "AiFiction Doc Sync"
+  short_description: "Keep AiFiction docs in sync"
+  default_prompt: "Use $aifiction-doc-sync to update the AiFiction operations manual, design overview, and project progress docs after meaningful project changes."

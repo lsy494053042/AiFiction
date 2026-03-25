@@ -1,0 +1,17 @@
+node_modules/
+.next/
+dist/
+coverage/
+.turbo/
+.env
+.env.*
+.env.local
+.env.*.local
+*.log
+*.tsbuildinfo
+storage/db/*.sqlite
+storage/db/*.sqlite-*
+storage/db/*.db
+storage/db/*.db-*
+storage/artifacts/generated/
+storage/exports/generated/

@@ -1,0 +1,25 @@
+{
+  "name": "@aifiction/data",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "db:bootstrap": "tsx src/bootstrap.ts",
+    "db:generate": "drizzle-kit generate --config=./drizzle.config.ts",
+    "db:v2-smoke": "tsx src/v2-smoke.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@aifiction/schemas": "0.1.0",
+    "@libsql/client": "^0.15.15",
+    "drizzle-orm": "^0.45.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}
+
