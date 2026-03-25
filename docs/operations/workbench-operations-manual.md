@@ -1,4 +1,4 @@
-﻿# AiFiction 操作手册
+# AiFiction 操作手册
 
 最后更新：2026-03-25
 
@@ -147,6 +147,26 @@ npm run db:v2-smoke
 
 - `packages/data/src/repositories/v2`
 - `packages/data/src/v2-smoke.ts`
+### 2.6 Git 本地版本管理模式
+
+当前仓库已经完成本地 Git 初始化，并已有首个基础提交。
+
+当前能做：
+
+- 在本地继续正常提交代码变更
+- 基于 `main` 分支持续迭代
+- 后续绑定 GitHub 远端后直接推送
+
+当前还不能做：
+
+- 直接从仓库内自动创建 GitHub 远端仓库
+- 在未知远端地址的情况下自动完成首次推送
+
+当前状态：
+
+- 本地 Git 仓库：已初始化
+- 默认分支：`main`
+- GitHub 远端：尚未配置
 
 ## 3. 当前可用功能清单
 
@@ -173,6 +193,7 @@ npm run db:v2-smoke
 - prompt registry 被真实工作流正式接管
 - 真实模型 provider
 - Agent / LangGraph 集成
+- GitHub 远端推送与协作流程
 
 ## 4. 推荐操作顺序
 
@@ -211,6 +232,12 @@ npm run db:generate
 
 ```powershell
 npm run db:v2-smoke
+```
+
+### 4.6 查看本地 Git 状态
+
+```powershell
+git -c safe.directory=F:/AiFiction status --short --branch
 ```
 
 ## 5. 当前最适合的使用姿势
