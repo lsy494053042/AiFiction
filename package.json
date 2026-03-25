@@ -14,12 +14,19 @@
     "db:generate": "npm --workspace @aifiction/data run db:generate",
     "db:v2-smoke": "npm --workspace @aifiction/data run db:v2-smoke",
     "db:check": "npm --workspace @aifiction/data run typecheck",
+    "worker:check": "npm --workspace @aifiction/worker run typecheck",
+    "web:check": "npm --workspace @aifiction/web run build",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run db:check && npm run worker:check && npm run web:check"
+  },
+  "overrides": {
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
   },
   "devDependencies": {
     "drizzle-kit": "^0.31.10",
-    "drizzle-orm": "^0.45.1"
+    "drizzle-orm": "^0.45.1",
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
   }
 }
-
