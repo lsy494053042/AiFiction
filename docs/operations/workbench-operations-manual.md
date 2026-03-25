@@ -155,7 +155,7 @@ npm run db:v2-smoke
 
 - 在本地继续正常提交代码变更
 - 基于 `main` 分支持续迭代
-- 后续绑定 GitHub 远端后直接推送
+- 直接向已绑定的 GitHub 远端推送
 
 当前还不能做：
 
@@ -166,7 +166,8 @@ npm run db:v2-smoke
 
 - 本地 Git 仓库：已初始化
 - 默认分支：`main`
-- GitHub 远端：尚未配置
+- GitHub 远端：已配置为 git@github-lsy494053042:lsy494053042/AiFiction.git
+- 首次推送：已完成
 
 ## 3. 当前可用功能清单
 
@@ -238,6 +239,12 @@ npm run db:v2-smoke
 
 ```powershell
 git -c safe.directory=F:/AiFiction status --short --branch
+```
+
+### 4.7 推送到 GitHub
+
+```powershell
+git -c safe.directory=F:/AiFiction push
 ```
 
 ## 5. 当前最适合的使用姿势
