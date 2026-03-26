@@ -10,14 +10,18 @@
   "scripts": {
     "dev:web": "npm --workspace @aifiction/web run dev",
     "dev:worker": "npm --workspace @aifiction/worker run dev",
+    "web:health": "node scripts/web-health.mjs",
+    "web:doctor": "node scripts/web-doctor.mjs",
     "db:bootstrap": "npm --workspace @aifiction/data run db:bootstrap",
     "db:generate": "npm --workspace @aifiction/data run db:generate",
     "db:v2-smoke": "npm --workspace @aifiction/data run db:v2-smoke",
+    "db:sync-smoke": "npm --workspace @aifiction/data run db:sync-smoke",
     "db:check": "npm --workspace @aifiction/data run typecheck",
     "worker:check": "npm --workspace @aifiction/worker run typecheck",
     "web:check": "npm --workspace @aifiction/web run build",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run db:check && npm run worker:check && npm run web:check"
+    "typecheck": "npm run db:check && npm run worker:check && npm run web:check",
+    "worker:sync": "npm --workspace @aifiction/worker run sync --"
   },
   "overrides": {
     "react": "18.2.0",

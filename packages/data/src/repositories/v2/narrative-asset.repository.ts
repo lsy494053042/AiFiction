@@ -1,6 +1,6 @@
-﻿import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
-import type { ChapterCard, CharacterCard, ForeshadowLedgerItem, VolumeOutline } from "@aifiction/schemas";
+import type { ChapterCard, CharacterCard, ForeshadowLedgerItem, TimelineEvent, VolumeOutline } from "@aifiction/schemas";
 
 import type { NarrativeAssetRepository, RepositoryWriteContext } from "../../contracts/repository-contracts";
 import { type SqliteClient, getSqliteClient } from "../../client";
@@ -11,6 +11,7 @@ import {
   characterRelationshipsV2Table,
   charactersV2Table,
   foreshadowsV2Table,
+  timelineEventsV2Table,
   volumesV2Table,
 } from "../../v2";
 import { buildLifecycleValues, nowIsoString, readStringArray } from "./repository-base";
@@ -24,9 +25,7 @@ function buildSceneId(chapterId: string, index: number): string {
 }
 
 /**
- * SQLite 下的 V2 叙事资产仓储。
- * 负责角色、卷纲、章卡、伏笔等作品内容资产的结构化读写。
- */
+ * SQLite 娑撳娈?V2 閸欐瑤绨ㄧ挧鍕獓娴犳挸鍋嶉妴? * 鐠愮喕鐭楃憴鎺曞閵嗕礁宓庣痪灞傗偓浣虹彿閸椔扳偓浣风础缁楁梻鐡戞担婊冩惂閸愬懎顔愮挧鍕獓閻ㄥ嫮绮ㄩ弸鍕鐠囪鍟撻妴? */
 export class SqliteNarrativeAssetRepository implements NarrativeAssetRepository {
   constructor(private readonly client: SqliteClient = getSqliteClient()) {}
 
@@ -343,6 +342,64 @@ export class SqliteNarrativeAssetRepository implements NarrativeAssetRepository 
             },
             extraJson: {
               expectedPayoffVolumeId: foreshadow.expectedPayoffVolumeId ?? null,
+            },
+          }),
+        },
+      });
+  }
+
+  async saveTimelineEvent(event: TimelineEvent, context?: RepositoryWriteContext): Promise<void> {
+    await ensureSqliteV2Bootstrap(this.client);
+
+    const timestamp = nowIsoString();
+    const [existingTimelineEvent] = await this.client.db
+      .select({ createdAt: timelineEventsV2Table.createdAt, version: timelineEventsV2Table.version })
+      .from(timelineEventsV2Table)
+      .where(eq(timelineEventsV2Table.id, event.id))
+      .limit(1);
+
+    await this.client.db
+      .insert(timelineEventsV2Table)
+      .values({
+        id: event.id,
+        projectId: event.workId,
+        chapterId: event.relatedChapterId,
+        inWorldDay: event.inWorldDay,
+        title: event.title,
+        description: event.description,
+        impactSummary: event.consequences[0] ?? null,
+        ...buildLifecycleValues({
+          existing: existingTimelineEvent,
+          status: "active",
+          timestamp,
+          metaJson: {
+            source: context?.source ?? "narrative-asset",
+          },
+          extraJson: {
+            involvedCharacterIds: event.involvedCharacterIds,
+            consequences: event.consequences,
+          },
+        }),
+      })
+      .onConflictDoUpdate({
+        target: timelineEventsV2Table.id,
+        set: {
+          projectId: event.workId,
+          chapterId: event.relatedChapterId,
+          inWorldDay: event.inWorldDay,
+          title: event.title,
+          description: event.description,
+          impactSummary: event.consequences[0] ?? null,
+          ...buildLifecycleValues({
+            existing: existingTimelineEvent,
+            status: "active",
+            timestamp,
+            metaJson: {
+              source: context?.source ?? "narrative-asset",
+            },
+            extraJson: {
+              involvedCharacterIds: event.involvedCharacterIds,
+              consequences: event.consequences,
             },
           }),
         },

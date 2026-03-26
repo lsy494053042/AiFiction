@@ -7,12 +7,18 @@ import { type SqliteClient, getSqliteClient } from "../client";
 import { SqliteNarrativeAssetRepository } from "../repositories/v2/narrative-asset.repository";
 import { SqliteProjectCatalogRepository } from "../repositories/v2/project-catalog.repository";
 import { readStringArray } from "../repositories/v2/repository-base";
+import {
+  type SyncFileSourceRecord,
+  type SyncReviewQueueRecord,
+  SqliteSyncSourceRepository,
+  SqliteSyncWorkflowRepository,
+} from "../repositories/v2";
 import { ensureSqliteV2Bootstrap } from "../v2/bootstrap";
 import { foreshadowsV2Table, novelProjectsV2Table, volumesV2Table } from "../v2";
 
 /**
- * 工作台首页需要的统计信息。
- * 这层是应用层读模型，目的是把页面真正关心的数字提前整理好。
+ * 工作台首页与详情页共用的统计信息。
+ * 这里保留小说核心规模，以及自动维护链路的目录源/待审查数。
  */
 export interface WorkbenchProjectStats {
   volumeCount: number;
@@ -20,12 +26,10 @@ export interface WorkbenchProjectStats {
   characterCount: number;
   foreshadowCount: number;
   relationCount: number;
+  sourceCount: number;
+  pendingReviewCount: number;
 }
 
-/**
- * 工作台作品列表项。
- * 这里保留作品主信息、统计信息和最近一章标题，方便列表页和首页卡片复用。
- */
 export interface WorkbenchProjectSummary {
   work: WorkProfile;
   stats: WorkbenchProjectStats;
@@ -33,10 +37,6 @@ export interface WorkbenchProjectSummary {
   updatedAt: string;
 }
 
-/**
- * 角色图谱节点。
- * 后续做图谱页面时，这个结构可以直接复用到前端可视化层。
- */
 export interface WorkbenchCharacterGraphNode {
   characterId: string;
   name: string;
@@ -44,10 +44,6 @@ export interface WorkbenchCharacterGraphNode {
   archetype: string;
 }
 
-/**
- * 角色图谱边。
- * 边上直接保留关系标签与强度，避免前端还要回头拼接说明文本。
- */
 export interface WorkbenchCharacterGraphEdge {
   sourceCharacterId: string;
   sourceCharacterName: string;
@@ -65,9 +61,57 @@ export interface WorkbenchCharacterGraph {
 }
 
 /**
- * 单本作品在工作台中的快照。
- * 这层为后续作品详情页、角色页、关系图谱页提供统一读取入口。
+ * 目录源概要。
+ * 页面主要用它来展示本地目录映射、扫描覆盖范围和待审查压力。
  */
+export interface WorkbenchFileSourceSummary {
+  id: string;
+  label: string;
+  sourceKind: string;
+  rootPath: string;
+  chapterPath?: string;
+  outlinePath?: string;
+  exportPath?: string;
+  status: string;
+  lastScannedAt?: string;
+  documentCount: number;
+  pendingDocumentCount: number;
+  missingDocumentCount: number;
+  reviewPendingCount: number;
+  latestDocumentPath?: string;
+}
+
+/**
+ * 审查队列概要。
+ * 前端不会直接吃整张 review 表，而是吃已经拼好源路径与文档类型的读模型。
+ */
+export interface WorkbenchReviewItemSummary {
+  id: string;
+  reviewKind: string;
+  severity: string;
+  status: string;
+  summary: string;
+  sourceDocumentId?: string;
+  sourcePath?: string;
+  documentKind?: string;
+  detailJson: Record<string, unknown>;
+}
+
+export interface WorkbenchReviewStats {
+  pendingCount: number;
+  lowSeverityCount: number;
+  mediumSeverityCount: number;
+  highSeverityCount: number;
+}
+
+interface WorkbenchSourceDocumentIndex {
+  id: string;
+  relativePath: string;
+  documentKind: string;
+  syncStatus: string;
+  lastModifiedAt: string;
+}
+
 export interface WorkbenchProjectSnapshot {
   work: WorkProfile;
   stats: WorkbenchProjectStats;
@@ -76,25 +120,28 @@ export interface WorkbenchProjectSnapshot {
   chapters: ChapterCard[];
   graph: WorkbenchCharacterGraph;
   latestChapter?: ChapterCard;
+  fileSources: WorkbenchFileSourceSummary[];
+  pendingReviews: WorkbenchReviewItemSummary[];
+  reviewStats: WorkbenchReviewStats;
 }
 
 /**
- * 工作台查询服务。
+ * 工作台读服务。
  * 这层位于 repository 之上、页面之下，专门负责把 V2 数据整理成页面友好的读模型。
  */
 export class NovelWorkbenchService {
   private readonly projectCatalogRepository: SqliteProjectCatalogRepository;
   private readonly narrativeAssetRepository: SqliteNarrativeAssetRepository;
+  private readonly syncSourceRepository: SqliteSyncSourceRepository;
+  private readonly syncWorkflowRepository: SqliteSyncWorkflowRepository;
 
   constructor(private readonly client: SqliteClient = getSqliteClient()) {
     this.projectCatalogRepository = new SqliteProjectCatalogRepository(client);
     this.narrativeAssetRepository = new SqliteNarrativeAssetRepository(client);
+    this.syncSourceRepository = new SqliteSyncSourceRepository(client);
+    this.syncWorkflowRepository = new SqliteSyncWorkflowRepository(client);
   }
 
-  /**
-   * 列出工作台首页需要的作品摘要。
-   * 先用项目仓储拿到作品列表，再补齐角色数、章节数、伏笔数等概览信息。
-   */
   async listProjectSummaries(page?: RepositoryPageRequest): Promise<WorkbenchProjectSummary[]> {
     await ensureSqliteV2Bootstrap(this.client);
 
@@ -121,10 +168,6 @@ export class NovelWorkbenchService {
     );
   }
 
-  /**
-   * 获取单本作品的工作台快照。
-   * 这会把作品、卷纲、角色、章节和关系图谱一次性整理出来，供页面直接消费。
-   */
   async getProjectSnapshotBySlug(slug: string): Promise<WorkbenchProjectSnapshot | null> {
     await ensureSqliteV2Bootstrap(this.client);
 
@@ -133,14 +176,38 @@ export class NovelWorkbenchService {
       return null;
     }
 
-    const [characters, chapters, volumes, foreshadowCount] = await Promise.all([
+    const [characters, chapters, volumes, foreshadowCount, fileSources, reviewRows] = await Promise.all([
       this.narrativeAssetRepository.listCharacters(work.id),
       this.narrativeAssetRepository.listChapters(work.id),
       this.listVolumes(work.id),
       this.countForeshadows(work.id),
+      this.syncSourceRepository.listFileSources(work.id),
+      this.syncWorkflowRepository.listReviewQueue(work.id, "pending"),
     ]);
 
+    const sourceDocumentsByFileSource = new Map<string, WorkbenchSourceDocumentIndex[]>();
+    const sourceDocumentById = new Map<string, { relativePath: string; documentKind: string }>();
+
+    for (const fileSource of fileSources) {
+      const sourceDocuments = this.sortSourceDocuments(await this.syncSourceRepository.listSourceDocuments(fileSource.id));
+      sourceDocumentsByFileSource.set(fileSource.id, sourceDocuments);
+
+      for (const sourceDocument of sourceDocuments) {
+        sourceDocumentById.set(sourceDocument.id, {
+          relativePath: sourceDocument.relativePath,
+          documentKind: sourceDocument.documentKind,
+        });
+      }
+    }
+
     const graph = this.buildCharacterGraph(characters);
+    const pendingReviews = reviewRows
+      .slice(0, 12)
+      .map((review) => this.createReviewSummary(review, sourceDocumentById));
+    const reviewStats = this.createReviewStats(reviewRows);
+    const fileSourceSummaries = fileSources.map((fileSource) =>
+      this.createFileSourceSummary(fileSource, sourceDocumentsByFileSource.get(fileSource.id) ?? [], reviewRows),
+    );
 
     return {
       work,
@@ -150,19 +217,20 @@ export class NovelWorkbenchService {
         characterCount: characters.length,
         foreshadowCount,
         relationCount: graph.edges.length,
+        sourceCount: fileSourceSummaries.length,
+        pendingReviewCount: reviewRows.length,
       },
       volumes,
       characters,
       chapters,
       graph,
       latestChapter: chapters.at(-1),
+      fileSources: fileSourceSummaries,
+      pendingReviews,
+      reviewStats,
     };
   }
 
-  /**
-   * 列出作品下的所有分卷。
-   * 当前 NarrativeAssetRepository 还没有公开卷列表，这里先由工作台查询层补齐读模型能力。
-   */
   private async listVolumes(projectId: string): Promise<VolumeOutline[]> {
     const volumeRows = await this.client.db
       .select()
@@ -179,9 +247,9 @@ export class NovelWorkbenchService {
         title: volumeRow.title,
         goal: volumeRow.phaseGoal,
         mainConflict: volumeRow.mainConflict,
-        entryHook: String(extraJson.entryHook ?? "待补入卷钩子"),
-        climax: String(extraJson.climax ?? "待补卷高潮"),
-        payoff: String(extraJson.payoff ?? "待补本卷兑现点"),
+        entryHook: String(extraJson.entryHook ?? "待补充卷钩子"),
+        climax: String(extraJson.climax ?? "待补充卷高潮"),
+        payoff: String(extraJson.payoff ?? "待补充本卷兑现点"),
         mustDeliverInfo: readStringArray(extraJson.mustDeliverInfo),
         keyCharacters: readStringArray(extraJson.keyCharacters),
         plannedChapterCount: volumeRow.plannedChapterCount,
@@ -189,10 +257,6 @@ export class NovelWorkbenchService {
     });
   }
 
-  /**
-   * 统计作品的伏笔数。
-   * 先返回总量，后续如果需要再拆成未回收、已回收等更细维度。
-   */
   private async countForeshadows(projectId: string): Promise<number> {
     const foreshadowRows = await this.client.db
       .select({ id: foreshadowsV2Table.id })
@@ -202,10 +266,6 @@ export class NovelWorkbenchService {
     return foreshadowRows.length;
   }
 
-  /**
-   * 把角色列表转换成前端可消费的关系图谱。
-   * 这层明确依赖结构化关系数据，而不是让前端或模型临时从正文里猜关系。
-   */
   private buildCharacterGraph(characters: CharacterCard[]): WorkbenchCharacterGraph {
     const nodes: WorkbenchCharacterGraphNode[] = characters.map((character) => ({
       characterId: character.id,
@@ -235,6 +295,82 @@ export class NovelWorkbenchService {
     return { nodes, edges };
   }
 
+  private sortSourceDocuments(
+    documents: Array<{
+      id: string;
+      relativePath: string;
+      documentKind: string;
+      syncStatus: string;
+      lastModifiedAt: string;
+    }>,
+  ): WorkbenchSourceDocumentIndex[] {
+    return [...documents].sort((left, right) => right.lastModifiedAt.localeCompare(left.lastModifiedAt, "zh-CN"));
+  }
+
+  private createFileSourceSummary(
+    fileSource: SyncFileSourceRecord,
+    sourceDocuments: Array<{
+      id: string;
+      relativePath: string;
+      syncStatus: string;
+      lastModifiedAt: string;
+    }>,
+    reviewRows: SyncReviewQueueRecord[],
+  ): WorkbenchFileSourceSummary {
+    const sourceDocumentIdSet = new Set(sourceDocuments.map((document) => document.id));
+    const reviewPendingCount = reviewRows.filter(
+      (review) => review.sourceDocumentId && sourceDocumentIdSet.has(review.sourceDocumentId),
+    ).length;
+    const latestDocumentPath = sourceDocuments[0]?.relativePath;
+
+    return {
+      id: fileSource.id,
+      label: fileSource.label,
+      sourceKind: fileSource.sourceKind,
+      rootPath: fileSource.rootPath,
+      chapterPath: fileSource.chapterPath,
+      outlinePath: fileSource.outlinePath,
+      exportPath: fileSource.exportPath,
+      status: fileSource.status,
+      lastScannedAt: fileSource.lastScannedAt,
+      documentCount: sourceDocuments.length,
+      pendingDocumentCount: sourceDocuments.filter((document) =>
+        document.syncStatus === "pending" || document.syncStatus === "review_pending",
+      ).length,
+      missingDocumentCount: sourceDocuments.filter((document) => document.syncStatus === "missing").length,
+      reviewPendingCount,
+      latestDocumentPath,
+    };
+  }
+
+  private createReviewSummary(
+    review: SyncReviewQueueRecord,
+    sourceDocumentById: Map<string, { relativePath: string; documentKind: string }>,
+  ): WorkbenchReviewItemSummary {
+    const sourceDocument = review.sourceDocumentId ? sourceDocumentById.get(review.sourceDocumentId) : undefined;
+
+    return {
+      id: review.id,
+      reviewKind: review.reviewKind,
+      severity: review.severity,
+      status: review.status,
+      summary: review.summary,
+      sourceDocumentId: review.sourceDocumentId,
+      sourcePath: sourceDocument?.relativePath,
+      documentKind: sourceDocument?.documentKind,
+      detailJson: review.detailJson,
+    };
+  }
+
+  private createReviewStats(reviews: SyncReviewQueueRecord[]): WorkbenchReviewStats {
+    return {
+      pendingCount: reviews.length,
+      lowSeverityCount: reviews.filter((review) => review.severity === "low").length,
+      mediumSeverityCount: reviews.filter((review) => review.severity === "medium").length,
+      highSeverityCount: reviews.filter((review) => review.severity === "high").length,
+    };
+  }
+
   private createEmptyStats(): WorkbenchProjectStats {
     return {
       volumeCount: 0,
@@ -242,6 +378,8 @@ export class NovelWorkbenchService {
       characterCount: 0,
       foreshadowCount: 0,
       relationCount: 0,
+      sourceCount: 0,
+      pendingReviewCount: 0,
     };
   }
 }

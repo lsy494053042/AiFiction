@@ -1,9 +1,10 @@
-﻿import type {
+import type {
   ChapterCard,
   CharacterCard,
   ContinuityReport,
   DraftArtifact,
   ForeshadowLedgerItem,
+  TimelineEvent,
   VolumeOutline,
   WorkProfile,
 } from "@aifiction/schemas";
@@ -40,13 +41,14 @@ export interface ProjectCatalogRepository {
 
 /**
  * 叙事资产仓储。
- * 负责角色、卷纲、章卡、伏笔等“作品内容资产”。
+ * 负责角色、卷纲、章卡、伏笔、时间线等“作品内容资产”。
  */
 export interface NarrativeAssetRepository {
   saveCharacter(character: CharacterCard, context?: RepositoryWriteContext): Promise<void>;
   saveVolume(volume: VolumeOutline, context?: RepositoryWriteContext): Promise<void>;
   saveChapter(chapter: ChapterCard, context?: RepositoryWriteContext): Promise<void>;
   saveForeshadow(foreshadow: ForeshadowLedgerItem, context?: RepositoryWriteContext): Promise<void>;
+  saveTimelineEvent(event: TimelineEvent, context?: RepositoryWriteContext): Promise<void>;
   listCharacters(projectId: string): Promise<CharacterCard[]>;
   listChapters(projectId: string, volumeId?: string): Promise<ChapterCard[]>;
 }
@@ -136,4 +138,3 @@ export interface PromptRegistryRepository {
     changeSummary?: string;
   }, context?: RepositoryWriteContext): Promise<string>;
 }
-

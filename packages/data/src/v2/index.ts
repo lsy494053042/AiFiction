@@ -1,4 +1,4 @@
-﻿import {
+import {
   guardrailProfilesV2Table,
   novelProjectsV2Table,
   projectProfilesV2Table,
@@ -25,6 +25,15 @@ import {
   promptTemplatesV2Table,
   promptTemplateVersionsV2Table,
 } from "./runtime-schema";
+import {
+  assetUpdatesV2Table,
+  fileSourcesV2Table,
+  reviewQueueV2Table,
+  sourceDocumentsV2Table,
+  sourceRefsV2Table,
+  syncRunItemsV2Table,
+  syncRunsV2Table,
+} from "./sync-schema";
 
 export {
   guardrailProfilesV2Table,
@@ -48,6 +57,13 @@ export {
   pipelineRunStepsV2Table,
   promptTemplatesV2Table,
   promptTemplateVersionsV2Table,
+  fileSourcesV2Table,
+  sourceDocumentsV2Table,
+  syncRunsV2Table,
+  syncRunItemsV2Table,
+  assetUpdatesV2Table,
+  reviewQueueV2Table,
+  sourceRefsV2Table,
 };
 
 /**
@@ -76,7 +92,13 @@ export const v2Schema = {
   pipelineRunStepsV2Table,
   promptTemplatesV2Table,
   promptTemplateVersionsV2Table,
+  fileSourcesV2Table,
+  sourceDocumentsV2Table,
+  syncRunsV2Table,
+  syncRunItemsV2Table,
+  assetUpdatesV2Table,
+  reviewQueueV2Table,
+  sourceRefsV2Table,
 };
 
 export * from "./bootstrap";
-

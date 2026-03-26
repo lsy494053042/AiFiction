@@ -20,8 +20,8 @@ function formatCount(value: number): string {
 }
 
 /**
- * 首页的作品概览区。
- * 这层先把作品摘要和关系图谱预览接进来，为后续详情页和图谱页打前站。
+ * 首页作品总览。
+ * 默认先把作品目录和当前聚焦作品抬到最前面，减少介绍性内容对操作区的干扰。
  */
 export function ProjectCatalogSection({
   projects,
@@ -33,7 +33,7 @@ export function ProjectCatalogSection({
       <section className="content-card wide-card">
         <div className="section-heading">
           <p>Projects</p>
-          <h2>工作台数据读取失败</h2>
+          <h2>作品总览暂时读不到数据</h2>
         </div>
         <div className="empty-state">
           <strong>当前还没成功读到 V2 数据。</strong>
@@ -48,11 +48,11 @@ export function ProjectCatalogSection({
       <section className="content-card wide-card">
         <div className="section-heading">
           <p>Projects</p>
-          <h2>V2 作品入口已经预留好</h2>
+          <h2>先创建第一本作品</h2>
         </div>
         <div className="empty-state">
           <strong>当前数据库里还没有作品数据。</strong>
-          <p>可以先运行 <code>npm run db:v2-smoke</code>，让首页拿到第一批真实的作品、角色和章节概览。</p>
+          <p>你可以先用下面的快速创建入口建一本书，或者先运行 <code>npm run db:v2-smoke</code> 看演示数据。</p>
         </div>
       </section>
     );
@@ -65,7 +65,7 @@ export function ProjectCatalogSection({
     <section className="content-card wide-card">
       <div className="section-heading">
         <p>Projects</p>
-        <h2>首页已经开始读取真实的 V2 作品概览</h2>
+        <h2>作品总览</h2>
       </div>
 
       <div className="project-workbench-grid">
@@ -84,15 +84,15 @@ export function ProjectCatalogSection({
               </p>
               <div className="stat-chip-row">
                 <span className="stat-chip">角色 {formatCount(project.stats.characterCount)}</span>
-                <span className="stat-chip">卷 {formatCount(project.stats.volumeCount)}</span>
-                <span className="stat-chip">章 {formatCount(project.stats.chapterCount)}</span>
-                <span className="stat-chip">关系 {formatCount(project.stats.relationCount)}</span>
+                <span className="stat-chip">分卷 {formatCount(project.stats.volumeCount)}</span>
+                <span className="stat-chip">章节 {formatCount(project.stats.chapterCount)}</span>
+                <span className="stat-chip">待审查 {formatCount(project.stats.pendingReviewCount)}</span>
               </div>
               <p className="project-meta subtle-text">
-                最近一章：{project.latestChapterTitle ?? "尚未建立章节"}
+                最近一章：{project.latestChapterTitle ?? "还没有章节"}
               </p>
               <Link className="action-link" href={`/works/${project.work.slug}`}>
-                进入作品详情
+                进入这本书
               </Link>
             </article>
           ))}
@@ -108,30 +108,38 @@ export function ProjectCatalogSection({
             <>
               <p className="project-copy">{highlightedProject.work.tagline}</p>
               <div className="stat-chip-row">
-                <span className="stat-chip">伏笔 {formatCount(highlightedProject.stats.foreshadowCount)}</span>
+                <span className="stat-chip">目录源 {formatCount(highlightedProject.stats.sourceCount)}</span>
+                <span className="stat-chip">待审查 {formatCount(highlightedProject.stats.pendingReviewCount)}</span>
                 <span className="stat-chip">关系边 {formatCount(highlightedProject.graph.edges.length)}</span>
-                <span className="stat-chip">角色节点 {formatCount(highlightedProject.graph.nodes.length)}</span>
               </div>
 
               <div className="mini-section">
-                <strong>当前卷概览</strong>
+                <strong>当前分卷</strong>
                 <ul className="mini-list">
-                  {highlightedVolumes.map((volume) => (
-                    <li key={volume.id}>
-                      <span>{`卷 ${volume.order}`}</span>
-                      <p>{volume.title}</p>
+                  {highlightedVolumes.length ? (
+                    highlightedVolumes.map((volume) => (
+                      <li key={volume.id}>
+                        <span>{`卷 ${volume.order}`}</span>
+                        <p>{volume.title}</p>
+                      </li>
+                    ))
+                  ) : (
+                    <li>
+                      <p>当前还没有分卷数据。</p>
                     </li>
-                  ))}
+                  )}
                 </ul>
               </div>
 
               <div className="mini-section">
-                <strong>角色关系预览</strong>
+                <strong>关系预览</strong>
                 {relationPreview.length ? (
                   <ul className="relation-list">
                     {relationPreview.map((relation) => (
                       <li key={`${relation.sourceCharacterId}:${relation.targetCharacterId}:${relation.publicLabel}`}>
-                        <strong>{relation.sourceCharacterName} → {relation.targetCharacterName}</strong>
+                        <strong>
+                          {relation.sourceCharacterName} → {relation.targetCharacterName}
+                        </strong>
                         <p>
                           {relation.publicLabel}
                           {relation.privateLabel ? ` / ${relation.privateLabel}` : ""}
@@ -148,15 +156,15 @@ export function ProjectCatalogSection({
               </div>
 
               <div className="mini-section">
-                <strong>章节推进锚点</strong>
+                <strong>章节推进</strong>
                 <p className="project-meta">
-                  最近一章：{highlightedProject.latestChapter?.title ?? "尚未建立章节"}
+                  最近一章：{highlightedProject.latestChapter?.title ?? "还没有章节"}
                 </p>
                 <p className="project-copy compact-copy">
-                  {highlightedProject.latestChapter?.summary ?? "当章节开始接入更多 CRUD 后，这里会继续扩成章节详情入口。"}
+                  {highlightedProject.latestChapter?.summary ?? "接下来优先通过目录同步和审查结果，逐步把章节事实维护起来。"}
                 </p>
                 <Link className="action-link" href={`/works/${highlightedProject.work.slug}`}>
-                  查看这本书的完整工作台
+                  进入当前聚焦作品
                 </Link>
               </div>
             </>

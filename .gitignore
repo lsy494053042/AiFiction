@@ -15,3 +15,6 @@ storage/db/*.db
 storage/db/*.db-*
 storage/artifacts/generated/
 storage/exports/generated/
+
+storage/sync-smoke/
+storage/tmp/

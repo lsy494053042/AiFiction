@@ -7,3 +7,4 @@ export * from "./contracts/repository-contracts";
 export * from "./foundation/base-columns";
 export * from "./v2";
 export * from "./workbench";
+export * from "./sync";

@@ -8,6 +8,7 @@
     "db:bootstrap": "tsx src/bootstrap.ts",
     "db:generate": "drizzle-kit generate --config=./drizzle.config.ts",
     "db:v2-smoke": "tsx src/v2-smoke.ts",
+    "db:sync-smoke": "tsx src/v2-sync-smoke.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -22,4 +23,3 @@
     "typescript": "^5.4.0"
   }
 }
-
