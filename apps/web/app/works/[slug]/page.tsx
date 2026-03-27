@@ -10,9 +10,12 @@ interface WorkDetailPageProps {
   params: {
     slug: string;
   };
+  searchParams?: {
+    view?: string;
+  };
 }
 
-export default async function WorkDetailPage({ params }: WorkDetailPageProps) {
+export default async function WorkDetailPage({ params, searchParams }: WorkDetailPageProps) {
   const workbenchService = new NovelWorkbenchService();
   const snapshot = await workbenchService.getProjectSnapshotBySlug(decodeURIComponent(params.slug));
 
@@ -20,5 +23,5 @@ export default async function WorkDetailPage({ params }: WorkDetailPageProps) {
     notFound();
   }
 
-  return <WorkDetailShell snapshot={snapshot} />;
+  return <WorkDetailShell snapshot={snapshot} activeView={searchParams?.view} />;
 }

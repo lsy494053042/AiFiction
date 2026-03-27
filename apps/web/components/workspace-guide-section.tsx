@@ -34,7 +34,7 @@ const guideGroups = [
  */
 export function WorkspaceGuideSection() {
   return (
-    <section className="content-card">
+    <section className="content-card" id="workspace-guide">
       <div className="section-heading">
         <p>Guide</p>
         <h2>帮助与设计说明</h2>

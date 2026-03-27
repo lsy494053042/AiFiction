@@ -1,8 +1,7 @@
-import Link from "next/link";
-
 import { CreateWorkSection } from "../components/create-work-section";
 import { ProjectCatalogSection } from "../components/project-catalog-section";
 import { WorkspaceGuideSection } from "../components/workspace-guide-section";
+import { WorkspaceTopbar } from "../components/workspace-topbar";
 import { getHomePageWorkbenchData } from "../lib/workbench";
 
 export const dynamic = "force-dynamic";
@@ -11,10 +10,7 @@ function formatCount(value: number): string {
   return new Intl.NumberFormat("zh-CN").format(value);
 }
 
-/**
- * 首页现在优先展示作品工作区，而不是把大段介绍挡在前面。
- * 真正高频的入口只保留：作品概览、快速新建、帮助说明。
- */
+// Stage 4.5 homepage: remove oversized hero and turn the page into a usable desk shell.
 export default async function HomePage() {
   const workbenchData = await getHomePageWorkbenchData();
 
@@ -25,29 +21,43 @@ export default async function HomePage() {
     0,
   );
   const focusHref = workbenchData.highlightedProject ? `/works/${workbenchData.highlightedProject.work.slug}` : "#quick-create";
-  const focusLabel = workbenchData.highlightedProject ? "继续处理当前作品" : "快速创建第一本作品";
+  const focusLabel = workbenchData.highlightedProject
+    ? "回到当前作品"
+    : "创建第一本作品";
 
   return (
     <main className="page-shell workspace-home">
-      <section className="content-card dashboard-header">
-        <div className="dashboard-copy">
-          <p className="eyebrow">Workspace</p>
-          <h1 className="dashboard-title">先看作品，再决定同步与审查</h1>
-          <p className="panel-copy">
-            首页默认只保留正在使用的内容：作品概览、快速新建和帮助入口。说明信息不再占掉前面几屏。
-          </p>
-        </div>
+      <WorkspaceTopbar
+        projectCount={projectCount}
+        sourceCount={sourceCount}
+        pendingReviewCount={pendingReviewCount}
+        focusHref={focusHref}
+        focusLabel={focusLabel}
+      />
 
-        <div className="dashboard-side">
-          <div className="stat-chip-row dashboard-chip-row">
-            <span className="stat-chip">作品 {formatCount(projectCount)}</span>
-            <span className="stat-chip">目录源 {formatCount(sourceCount)}</span>
-            <span className="stat-chip">待审查 {formatCount(pendingReviewCount)}</span>
-          </div>
-          <Link className="action-link dashboard-link" href={focusHref}>
-            {focusLabel}
-          </Link>
-        </div>
+      <section className="workspace-summary-strip" aria-label={"工作台摘要"}>
+        <article className="content-card summary-card summary-card-wide">
+          <p className="eyebrow">Desk</p>
+          <h1 className="summary-title">{"先定位作品，再决定今天要处理什么"}</h1>
+          <p className="panel-copy">
+            {"首页现在优先服务“找书、看状态、继续处理”。说明和补充信息全部后置，不再挡住真正的工作区。"}
+          </p>
+        </article>
+        <article className="content-card summary-card">
+          <p className="eyebrow">Projects</p>
+          <strong className="summary-value">{formatCount(projectCount)}</strong>
+          <p className="summary-copy">{"当前作品数"}</p>
+        </article>
+        <article className="content-card summary-card">
+          <p className="eyebrow">Sources</p>
+          <strong className="summary-value">{formatCount(sourceCount)}</strong>
+          <p className="summary-copy">{"已绑定目录源"}</p>
+        </article>
+        <article className="content-card summary-card">
+          <p className="eyebrow">Review</p>
+          <strong className="summary-value">{formatCount(pendingReviewCount)}</strong>
+          <p className="summary-copy">{"待处理审查"}</p>
+        </article>
       </section>
 
       <ProjectCatalogSection

@@ -8,56 +8,85 @@ import { WorkSyncPanel } from "../lib/work-sync-panel";
 
 interface WorkDetailShellProps {
   snapshot: WorkbenchProjectSnapshot;
+  activeView?: string;
 }
+
+type WorkDetailView = "overview" | "reviews" | "story" | "manual";
+
+const detailViewOrder: WorkDetailView[] = ["overview", "reviews", "story", "manual"];
+
+const detailViewLabelMap: Record<WorkDetailView, string> = {
+  overview: "总览",
+  reviews: "待处理",
+  story: "剧情资产",
+  manual: "高级维护",
+};
+
+const detailViewCopyMap: Record<WorkDetailView, string> = {
+  overview:
+    "先看这本书现在的同步状态、资产概形和下一步重点，不再一上来就把所有表单摊满。",
+  reviews:
+    "这里只集中处理本次同步后的目录扫描和待审查项，把“该你判断的东西”放在一起。",
+  story:
+    "这个视图只看分卷、角色、章节和关系预览，用来快速判断小说资产是否在正常成形。",
+  manual:
+    "手工维护只作为兜底入口。当自动同步不够或需要纠错时，再来这个区域修正。",
+};
 
 function toTextareaValue(values: string[]): string {
   return values.join("\n");
 }
 
-/**
- * 作品详情工作台。
- * 默认优先展示自动维护状态和资产概览，逐条编辑收进折叠区，降低首屏负担。
- */
-export function WorkDetailShell({ snapshot }: WorkDetailShellProps) {
-  const { work, stats, volumes, characters, chapters, graph, fileSources, pendingReviews, reviewStats } = snapshot;
-  const volumePreview = volumes.slice(0, 4);
-  const characterPreview = characters.slice(0, 5);
-  const chapterPreview = [...chapters].slice(-5).reverse();
-  const relationPreview = graph.edges.slice(0, 8);
+function normalizeDetailView(value?: string): WorkDetailView {
+  if (value && detailViewOrder.includes(value as WorkDetailView)) {
+    return value as WorkDetailView;
+  }
 
+  return "overview";
+}
+
+function getViewHref(workSlug: string, view: WorkDetailView): string {
+  const encodedSlug = encodeURIComponent(workSlug);
+  return view === "overview" ? `/works/${encodedSlug}` : `/works/${encodedSlug}?view=${view}`;
+}
+
+function getFocusState(workSlug: string, fileSourceCount: number, pendingReviewCount: number) {
+  if (pendingReviewCount > 0) {
+    return {
+      title: "先处理待审查",
+      description: `当前有 ${pendingReviewCount} 项变更等你判断，先把它们清掉，工作台会立刻清爽很多。`,
+      href: getViewHref(workSlug, "reviews"),
+      cta: "去处理待审查",
+    };
+  }
+
+  if (fileSourceCount > 0) {
+    return {
+      title: "查看剧情资产",
+      description: "目录已经绑定，可以直接检查分卷、角色、章节和关系是否在正常成形。",
+      href: getViewHref(workSlug, "story"),
+      cta: "去看剧情资产",
+    };
+  }
+
+  return {
+    title: "先绑定本地目录",
+    description: "没有接入正文目录时，后面的扫描、抽取和审查都无法自动跑起来。",
+    href: getViewHref(workSlug, "reviews"),
+    cta: "去绑定目录",
+  };
+}
+
+function renderStoryOverview(
+  work: WorkbenchProjectSnapshot["work"],
+  volumes: WorkbenchProjectSnapshot["volumes"],
+  characters: WorkbenchProjectSnapshot["characters"],
+  chapters: WorkbenchProjectSnapshot["chapters"],
+  volumePreview: WorkbenchProjectSnapshot["volumes"],
+  characterPreview: WorkbenchProjectSnapshot["characters"],
+  chapterPreview: WorkbenchProjectSnapshot["chapters"],
+) {
   return (
-    <main className="page-shell detail-shell">
-      <section className="hero-panel detail-hero">
-        <div className="hero-actions">
-          <Link className="ghost-link" href="/">
-            返回首页
-          </Link>
-        </div>
-        <p className="eyebrow">Work Detail</p>
-        <h1>{work.title}</h1>
-        <p className="hero-copy">
-          默认先看目录同步、待审查和当前资产概览。需要修正时再展开逐条编辑，不再把所有表单直接摊满页面。
-        </p>
-        <div className="stat-chip-row detail-stat-row">
-          <span className="stat-chip">角色 {stats.characterCount}</span>
-          <span className="stat-chip">分卷 {stats.volumeCount}</span>
-          <span className="stat-chip">章节 {stats.chapterCount}</span>
-          <span className="stat-chip">关系 {stats.relationCount}</span>
-          <span className="stat-chip">目录源 {stats.sourceCount}</span>
-          <span className="stat-chip">待审查 {stats.pendingReviewCount}</span>
-        </div>
-      </section>
-
-      <section className="detail-grid">
-        <div className="detail-stack">
-          <WorkSyncPanel
-            workId={work.id}
-            workSlug={work.slug}
-            fileSources={fileSources}
-            pendingReviews={pendingReviews}
-            reviewStats={reviewStats}
-          />
-
           <article className="content-card">
             <div className="section-heading">
               <p>Overview</p>
@@ -386,9 +415,11 @@ export function WorkDetailShell({ snapshot }: WorkDetailShellProps) {
               </div>
             </details>
           </article>
-        </div>
+  );
+}
 
-        <div className="detail-stack">
+function renderRelationPreview(relationPreview: WorkbenchProjectSnapshot["graph"]["edges"]) {
+  return (
           <article className="content-card">
             <div className="section-heading">
               <p>Graph</p>
@@ -414,10 +445,161 @@ export function WorkDetailShell({ snapshot }: WorkDetailShellProps) {
               )}
             </ul>
           </article>
+  );
+}
 
-          <WorkManualPanel snapshot={snapshot} />
+function renderDetailView(currentView: WorkDetailView, snapshot: WorkbenchProjectSnapshot) {
+  const { work, fileSources, pendingReviews, reviewStats, volumes, characters, chapters, graph } = snapshot;
+  const volumePreview = volumes.slice(0, 4);
+  const characterPreview = characters.slice(0, 5);
+  const chapterPreview = [...chapters].slice(-5).reverse();
+  const relationPreview = graph.edges.slice(0, 8);
+  const focusState = getFocusState(work.slug, fileSources.length, pendingReviews.length);
+
+  if (currentView === "overview") {
+    return (
+      <section className="detail-view-grid">
+        <div className="detail-stack">
+          <article className="content-card detail-summary-card">
+            <div className="section-heading">
+              <p>Focus</p>
+              <h2>{"现在该看什么"}</h2>
+            </div>
+            <p className="panel-copy">{focusState.description}</p>
+            <div className="detail-summary-list">
+              <div className="detail-summary-item">
+                <span className="detail-summary-key">{"目录源"}</span>
+                <strong className="detail-summary-value">{fileSources.length}</strong>
+              </div>
+              <div className="detail-summary-item">
+                <span className="detail-summary-key">{"待审查"}</span>
+                <strong className="detail-summary-value">{reviewStats.pendingCount}</strong>
+              </div>
+              <div className="detail-summary-item">
+                <span className="detail-summary-key">{"中高风险"}</span>
+                <strong className="detail-summary-value">{reviewStats.mediumSeverityCount + reviewStats.highSeverityCount}</strong>
+              </div>
+              <div className="detail-summary-item">
+                <span className="detail-summary-key">{"下一步"}</span>
+                <Link className="detail-primary-link" href={focusState.href}>
+                  {focusState.cta}
+                </Link>
+              </div>
+            </div>
+          </article>
+        </div>
+        <div className="detail-stack">
+          {renderStoryOverview(work, volumes, characters, chapters, volumePreview, characterPreview, chapterPreview)}
+          {renderRelationPreview(relationPreview)}
         </div>
       </section>
+    );
+  }
+
+  if (currentView === "reviews") {
+    return (
+      <section className="detail-view-grid detail-view-grid-single">
+        <WorkSyncPanel
+          workId={work.id}
+          workSlug={work.slug}
+          fileSources={fileSources}
+          pendingReviews={pendingReviews}
+          reviewStats={reviewStats}
+        />
+      </section>
+    );
+  }
+
+  if (currentView === "story") {
+    return (
+      <section className="detail-view-grid">
+        <div className="detail-stack">
+          {renderStoryOverview(work, volumes, characters, chapters, volumePreview, characterPreview, chapterPreview)}
+        </div>
+        <div className="detail-stack">{renderRelationPreview(relationPreview)}</div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="detail-view-grid">
+      <div className="detail-stack">
+        <WorkManualPanel snapshot={snapshot} />
+      </div>
+      <div className="detail-stack">
+        {renderStoryOverview(work, volumes, characters, chapters, volumePreview, characterPreview, chapterPreview)}
+      </div>
+    </section>
+  );
+}
+
+export function WorkDetailShell({ snapshot, activeView }: WorkDetailShellProps) {
+  const { work, stats, fileSources, pendingReviews, reviewStats } = snapshot;
+  const currentView = normalizeDetailView(activeView);
+  const focusState = getFocusState(work.slug, fileSources.length, pendingReviews.length);
+
+  return (
+    <main className="page-shell detail-shell">
+      <section className="hero-panel detail-hero">
+        <div className="hero-actions">
+          <Link className="ghost-link" href="/">
+            {"返回首页"}
+          </Link>
+        </div>
+        <div className="detail-hero-grid">
+          <div className="detail-hero-copy-block">
+            <p className="eyebrow">Work Detail</p>
+            <h1>{work.title}</h1>
+            <p className="hero-copy">{detailViewCopyMap[currentView]}</p>
+          </div>
+          <article className="detail-focus-card">
+            <p className="eyebrow">Next</p>
+            <h2>{focusState.title}</h2>
+            <p>{focusState.description}</p>
+            <Link className="detail-primary-link" href={focusState.href}>
+              {focusState.cta}
+            </Link>
+          </article>
+        </div>
+        <div className="detail-stat-grid">
+          <article className="detail-stat-card">
+            <span>{"目录源"}</span>
+            <strong>{stats.sourceCount}</strong>
+          </article>
+          <article className="detail-stat-card">
+            <span>{"待审查"}</span>
+            <strong>{stats.pendingReviewCount}</strong>
+          </article>
+          <article className="detail-stat-card">
+            <span>{"章节"}</span>
+            <strong>{stats.chapterCount}</strong>
+          </article>
+          <article className="detail-stat-card">
+            <span>{"关系"}</span>
+            <strong>{stats.relationCount}</strong>
+          </article>
+        </div>
+      </section>
+
+      <nav className="detail-nav" aria-label="work detail navigation">
+        {detailViewOrder.map((view) => {
+          const isActive = view === currentView;
+          return (
+            <Link
+              key={view}
+              className={isActive ? "detail-nav-link is-active" : "detail-nav-link"}
+              href={getViewHref(work.slug, view)}
+            >
+              <span>{detailViewLabelMap[view]}</span>
+              {view === "reviews" && reviewStats.pendingCount > 0 ? (
+                <span className="detail-nav-badge">{reviewStats.pendingCount}</span>
+              ) : null}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {renderDetailView(currentView, snapshot)}
     </main>
   );
 }
