@@ -4,7 +4,7 @@ export function ModulesSection() {
   return (
     <section className="content-card wide-card">
       <div className="section-heading">
-        <p>Workspace</p>
+        <p>模块</p>
         <h2>仓库里已经落下的模块</h2>
       </div>
       <ul className="module-list">

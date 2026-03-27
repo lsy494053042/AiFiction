@@ -5,6 +5,7 @@ import {
   SqliteSyncWorkflowRepository,
 } from "../repositories/v2";
 import { ensureSqliteV2Bootstrap } from "../v2/bootstrap";
+import { assessReviewRisk } from "./review-risk";
 import { ApprovedExtractionWritebackService } from "./approved-extraction-writeback.service";
 
 export interface DecideReviewItemInput {
@@ -26,10 +27,13 @@ export interface DecideReviewItemResult {
   };
 }
 
+export interface AutoApproveReviewItemsResult {
+  approvedReviewIds: string[];
+  skippedReviewIds: string[];
+}
+
 /**
- * 审查队列服务。
- * 负责把“通过 / 驳回”动作真正写回审查项、建议更新和源文档状态。
- */
+ * 瀹℃煡闃熷垪鏈嶅姟銆? * 璐熻矗鎶娾€滈€氳繃 / 椹冲洖鈥濆姩浣滅湡姝ｅ啓鍥炲鏌ラ」銆佸缓璁洿鏂板拰婧愭枃妗ｇ姸鎬併€? */
 export class SyncReviewQueueService {
   private readonly approvedExtractionWritebackService: ApprovedExtractionWritebackService;
   private readonly syncSourceRepository: SqliteSyncSourceRepository;
@@ -39,6 +43,44 @@ export class SyncReviewQueueService {
     this.approvedExtractionWritebackService = new ApprovedExtractionWritebackService(client);
     this.syncSourceRepository = new SqliteSyncSourceRepository(client);
     this.syncWorkflowRepository = new SqliteSyncWorkflowRepository(client);
+  }
+
+  async autoApproveReviewItems(input: { reviewIds: string[]; decisionNote?: string }): Promise<AutoApproveReviewItemsResult> {
+    await ensureSqliteV2Bootstrap(this.client);
+
+    const approvedReviewIds: string[] = [];
+    const skippedReviewIds: string[] = [];
+
+    for (const reviewId of input.reviewIds) {
+      const review = await this.syncWorkflowRepository.getReviewItemById(reviewId);
+      if (!review || review.status !== "pending") {
+        skippedReviewIds.push(reviewId);
+        continue;
+      }
+
+      const riskAssessment = assessReviewRisk({
+        reviewKind: review.reviewKind,
+        severity: review.severity,
+        detailJson: review.detailJson,
+      });
+
+      if (!riskAssessment.isAutoApprovable) {
+        skippedReviewIds.push(reviewId);
+        continue;
+      }
+
+      await this.decideReviewItem({
+        reviewId,
+        decision: "approved",
+        decisionNote: input.decisionNote,
+      });
+      approvedReviewIds.push(reviewId);
+    }
+
+    return {
+      approvedReviewIds,
+      skippedReviewIds,
+    };
   }
 
   async decideReviewItem(input: DecideReviewItemInput): Promise<DecideReviewItemResult> {
@@ -118,9 +160,7 @@ export class SyncReviewQueueService {
   }
 
   /**
-   * 根据同一源文档下的审查结果，回写源文档同步状态。
-   * 规则很简单：只要还有 pending 就保持 review_pending；有 rejected 就标记 review_rejected；否则视为 synced。
-   */
+   * 鏍规嵁鍚屼竴婧愭枃妗ｄ笅鐨勫鏌ョ粨鏋滐紝鍥炲啓婧愭枃妗ｅ悓姝ョ姸鎬併€?   * 瑙勫垯寰堢畝鍗曪細鍙杩樻湁 pending 灏变繚鎸?review_pending锛涙湁 rejected 灏辨爣璁?review_rejected锛涘惁鍒欒涓?synced銆?   */
   private async syncSourceDocumentStatus(projectId: string, sourceDocumentId: string): Promise<string | undefined> {
     const sourceDocument = await this.findSourceDocument(projectId, sourceDocumentId);
     if (!sourceDocument) {

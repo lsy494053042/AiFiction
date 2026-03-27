@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "defaults": {
+    "workspaceName": "AiFiction",
+    "git": {
+      "remoteName": "origin",
+      "defaultBranch": "main"
+    },
+    "web": {
+      "preferredPort": 8080
+    },
+    "storage": {
+      "databasePath": "storage/db/aifiction.sqlite"
+    }
+  },
+  "profiles": [
+    {
+      "id": "desktop-b67f806",
+      "label": "DESKTOP-B67F806",
+      "match": {
+        "computerName": "DESKTOP-B67F806"
+      },
+      "workspaceRoot": "D:/AIWorkSpace/AiFiction",
+      "git": {
+        "safeDirectory": "D:/AIWorkSpace/AiFiction",
+        "remoteUrl": "git@github.com:lsy494053042/AiFiction.git",
+        "requiresSafeDirectory": true
+      },
+      "ssh": {
+        "mode": "direct-host",
+        "host": "github.com",
+        "user": "git",
+        "configPath": null,
+        "identityHint": "Use the default GitHub SSH identity or agent on this machine."
+      },
+      "notes": [
+        "This machine uses D:/AIWorkSpace/AiFiction as the active workspace root.",
+        "Git commands should include safe.directory when the repo owner differs from the current Windows SID."
+      ]
+    },
+    {
+      "id": "f-drive-workstation",
+      "label": "F-drive workstation",
+      "match": {
+        "workspaceRoot": "F:/AiFiction"
+      },
+      "workspaceRoot": "F:/AiFiction",
+      "git": {
+        "safeDirectory": "F:/AiFiction",
+        "remoteUrl": "git@github-lsy494053042:lsy494053042/AiFiction.git",
+        "requiresSafeDirectory": true
+      },
+      "ssh": {
+        "mode": "ssh-alias",
+        "host": "github-lsy494053042",
+        "user": "git",
+        "configPath": "%USERPROFILE%/.ssh/config",
+        "identityHint": "Expect the github-lsy494053042 SSH alias to be available on this machine."
+      },
+      "notes": [
+        "Fallback profile for the F:/AiFiction workstation.",
+        "Use this when the repo lives on F:/AiFiction and GitHub is reached through the github-lsy494053042 SSH alias."
+      ]
+    }
+  ]
+}

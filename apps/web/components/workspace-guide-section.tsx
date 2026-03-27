@@ -23,20 +23,16 @@ const guideGroups = [
     items: [
       "识别目录中的新增和修改文件。",
       "生成摘要预览、结构化抽取预览和待审查项。",
-      "把通过审查的角色和关系候选回写到结构化资产层。",
+      "把通过审查的角色、关系、伏笔和时间线候选回写到结构化资产层。",
     ],
   },
 ];
 
-/**
- * 首页帮助区。
- * 把设计说明收进口袋，需要时再展开，避免挡住作品工作区。
- */
 export function WorkspaceGuideSection() {
   return (
     <section className="content-card" id="workspace-guide">
       <div className="section-heading">
-        <p>Guide</p>
+        <p>帮助</p>
         <h2>帮助与设计说明</h2>
       </div>
       <p className="panel-copy">说明信息默认后置，只有在你想确认设计思路时再展开查看。</p>

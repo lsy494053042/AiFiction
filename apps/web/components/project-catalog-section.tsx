@@ -53,7 +53,6 @@ function matchesSearch(project: WorkbenchProjectSummary, keyword: string): boole
   return haystack.includes(keyword);
 }
 
-// Bookshelf shell for the homepage.
 export function ProjectCatalogSection({
   projects,
   highlightedProject,
@@ -67,11 +66,11 @@ export function ProjectCatalogSection({
     return (
       <section className="content-card bookshelf-panel" id="bookshelf">
         <div className="section-heading">
-          <p>Bookshelf</p>
-          <h2>{"书架暂时读不到数据"}</h2>
+          <p>书架</p>
+          <h2>书架暂时读不到数据</h2>
         </div>
         <div className="empty-state">
-          <strong>{"当前还没成功读到 V2 数据。"}</strong>
+          <strong>当前还没成功读到 V2 数据。</strong>
           <p>{loadError}</p>
         </div>
       </section>
@@ -82,15 +81,13 @@ export function ProjectCatalogSection({
     return (
       <section className="content-card bookshelf-panel" id="bookshelf">
         <div className="section-heading">
-          <p>Bookshelf</p>
-          <h2>{"先把第一本书放进书架"}</h2>
+          <p>书架</p>
+          <h2>先把第一本书放进书架</h2>
         </div>
         <div className="empty-state">
-          <strong>{"当前数据库里还没有作品数据。"}</strong>
+          <strong>当前数据库里还没有作品数据。</strong>
           <p>
-            {"你可以先用下面的快速创建入口建一本书，或者先运行 "}
-            <code>npm run db:v2-smoke</code>
-            {" 看演示数据。"}
+            你可以先用下面的快速创建入口建一本书，或者先运行 <code>npm run db:v2-smoke</code> 看演示数据。
           </p>
         </div>
       </section>
@@ -119,22 +116,22 @@ export function ProjectCatalogSection({
     <section className="content-card bookshelf-panel" id="bookshelf">
       <div className="bookshelf-toolbar">
         <div>
-          <p className="eyebrow">Bookshelf</p>
-          <h2>{"作品书架"}</h2>
-          <p className="panel-copy">{"你主要在这里找到作品、看当前状态，并快速决定下一步进入哪本书。"}</p>
+          <p className="eyebrow">书架</p>
+          <h2>作品书架</h2>
+          <p className="panel-copy">你主要在这里找到作品、看当前状态，并快速决定下一步进入哪本书。</p>
         </div>
 
         <div className="bookshelf-search-block">
           <label className="workspace-search-field">
-            <span>{"搜索作品"}</span>
+            <span>搜索作品</span>
             <input
               type="search"
               value={searchValue}
               onChange={(event) => setSearchValue(event.target.value)}
-              placeholder={"搜索书名、题材、平台或最近章节"}
+              placeholder="搜索书名、题材、平台或最近章节"
             />
           </label>
-          <div className="bookshelf-filter-row" role="tablist" aria-label={"书架筛选"}>
+          <div className="bookshelf-filter-row" role="tablist" aria-label="书架筛选">
             {shelfFilters.map((filter) => (
               <button
                 key={filter.key}
@@ -153,13 +150,9 @@ export function ProjectCatalogSection({
         <div className="bookshelf-grid-area">
           <div className="bookshelf-caption-row">
             <p className="bookshelf-caption">
-              {"当前显示 "}
-              <strong>{formatCount(filteredProjects.length)}</strong>
-              {" 本作品"}
+              当前显示 <strong>{formatCount(filteredProjects.length)}</strong> 本作品
             </p>
-            {deferredSearch ? (
-              <p className="bookshelf-caption subtle-text">{`${"搜索："}${deferredSearch}`}</p>
-            ) : null}
+            {deferredSearch ? <p className="bookshelf-caption subtle-text">{`搜索：${deferredSearch}`}</p> : null}
           </div>
 
           {filteredProjects.length ? (
@@ -187,11 +180,9 @@ export function ProjectCatalogSection({
                   </div>
 
                   <div className="book-footer">
-                    <p className="book-meta subtle-text">
-                      {`${"最近章节："}${project.latestChapterTitle ?? "还没有章节"}`}
-                    </p>
+                    <p className="book-meta subtle-text">{`最近章节：${project.latestChapterTitle ?? "还没有章节"}`}</p>
                     <Link className="action-link" href={`/works/${project.work.slug}`}>
-                      {"打开作品"}
+                      打开作品
                     </Link>
                   </div>
                 </article>
@@ -199,8 +190,8 @@ export function ProjectCatalogSection({
             </div>
           ) : (
             <div className="empty-state compact-state bookshelf-empty">
-              <strong>{"当前筛选结果为空。"}</strong>
-              <p>{"可以试试清空搜索词，或者切回“全部作品”。"}</p>
+              <strong>当前筛选结果为空。</strong>
+              <p>可以试试清空搜索词，或者切回“全部作品”。</p>
             </div>
           )}
         </div>
@@ -208,7 +199,7 @@ export function ProjectCatalogSection({
         <aside className="bookshelf-side-rail">
           <article className="focus-card">
             <div className="section-heading">
-              <p>Focus</p>
+              <p>焦点</p>
               <h2>{focusProject?.work.title ?? "等待作品焦点"}</h2>
             </div>
             {focusProject ? (
@@ -220,7 +211,7 @@ export function ProjectCatalogSection({
                   <span className="stat-chip">{`关系 ${formatCount(focusProject.graph.edges.length)}`}</span>
                 </div>
                 <div className="mini-section">
-                  <strong>{"当前分卷"}</strong>
+                  <strong>当前分卷</strong>
                   <ul className="mini-list">
                     {focusVolumes.length ? (
                       focusVolumes.map((volume) => (
@@ -231,33 +222,33 @@ export function ProjectCatalogSection({
                       ))
                     ) : (
                       <li>
-                        <p>{"当前还没有分卷数据。"}</p>
+                        <p>当前还没有分卷数据。</p>
                       </li>
                     )}
                   </ul>
                 </div>
                 <div className="mini-section">
-                  <strong>{"最近章节"}</strong>
+                  <strong>最近章节</strong>
                   <p className="book-meta">{focusChapter?.title ?? "还没有章节"}</p>
                   <p className="panel-copy compact-copy">
                     {focusChapter?.summary ?? "先通过自动同步和审查，把章节事实逐步沉淀下来。"}
                   </p>
                   <Link className="action-link" href={`/works/${focusProject.work.slug}`}>
-                    {"继续处理这本书"}
+                    继续处理这本书
                   </Link>
                 </div>
               </>
             ) : (
               <div className="empty-state compact-state">
-                <p>{"当前还没有可聚焦的作品。"}</p>
+                <p>当前还没有可聚焦的作品。</p>
               </div>
             )}
           </article>
 
           <article className="focus-card">
             <div className="section-heading">
-              <p>Attention</p>
-              <h2>{"优先处理"}</h2>
+              <p>优先处理</p>
+              <h2>优先处理列表</h2>
             </div>
             {attentionProjects.length ? (
               <ul className="attention-list">
@@ -270,14 +261,14 @@ export function ProjectCatalogSection({
                       </p>
                     </div>
                     <Link className="ghost-link" href={`/works/${project.work.slug}`}>
-                      {"进入"}
+                      进入
                     </Link>
                   </li>
                 ))}
               </ul>
             ) : (
               <div className="empty-state compact-state">
-                <p>{"当前没有高优先级待处理作品，可以继续正常创作。"}</p>
+                <p>当前没有高优先级待处理作品，可以继续正常创作。</p>
               </div>
             )}
           </article>

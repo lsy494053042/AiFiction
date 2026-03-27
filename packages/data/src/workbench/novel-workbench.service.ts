@@ -1,6 +1,12 @@
-import { asc, eq } from "drizzle-orm";
+﻿import { asc, eq } from "drizzle-orm";
 
-import type { ChapterCard, CharacterCard, VolumeOutline, WorkProfile } from "@aifiction/schemas";
+import type {
+  ChapterCard,
+  CharacterCard,
+  ForeshadowLedgerItem,
+  VolumeOutline,
+  WorkProfile,
+} from "@aifiction/schemas";
 
 import type { RepositoryPageRequest } from "../contracts/repository-contracts";
 import { type SqliteClient, getSqliteClient } from "../client";
@@ -8,18 +14,22 @@ import { SqliteNarrativeAssetRepository } from "../repositories/v2/narrative-ass
 import { SqliteProjectCatalogRepository } from "../repositories/v2/project-catalog.repository";
 import { readStringArray } from "../repositories/v2/repository-base";
 import {
+  type SyncAssetUpdateRecord,
   type SyncFileSourceRecord,
   type SyncReviewQueueRecord,
+  type SyncSourceRefRecord,
   SqliteSyncSourceRepository,
   SqliteSyncWorkflowRepository,
 } from "../repositories/v2";
+import { assessReviewRisk } from "../sync/review-risk";
 import { ensureSqliteV2Bootstrap } from "../v2/bootstrap";
 import { foreshadowsV2Table, novelProjectsV2Table, volumesV2Table } from "../v2";
+import {
+  buildReviewBundleImpactSummary,
+  type WorkbenchImpactSummary,
+  type WorkbenchSourceDocumentContext,
+} from "./impact-analysis";
 
-/**
- * 工作台首页与详情页共用的统计信息。
- * 这里保留小说核心规模，以及自动维护链路的目录源/待审查数。
- */
 export interface WorkbenchProjectStats {
   volumeCount: number;
   chapterCount: number;
@@ -53,6 +63,9 @@ export interface WorkbenchCharacterGraphEdge {
   privateLabel?: string;
   trustLevel: number;
   tensionLevel: number;
+  sourceRefCount: number;
+  latestSourcePath?: string;
+  latestEvidenceQuote?: string;
 }
 
 export interface WorkbenchCharacterGraph {
@@ -60,10 +73,6 @@ export interface WorkbenchCharacterGraph {
   edges: WorkbenchCharacterGraphEdge[];
 }
 
-/**
- * 目录源概要。
- * 页面主要用它来展示本地目录映射、扫描覆盖范围和待审查压力。
- */
 export interface WorkbenchFileSourceSummary {
   id: string;
   label: string;
@@ -81,33 +90,77 @@ export interface WorkbenchFileSourceSummary {
   latestDocumentPath?: string;
 }
 
-/**
- * 审查队列概要。
- * 前端不会直接吃整张 review 表，而是吃已经拼好源路径与文档类型的读模型。
- */
 export interface WorkbenchReviewItemSummary {
   id: string;
+  syncRunId?: string;
   reviewKind: string;
   severity: string;
   status: string;
   summary: string;
+  sourceType: string;
+  sourceId?: string;
   sourceDocumentId?: string;
   sourcePath?: string;
   documentKind?: string;
   detailJson: Record<string, unknown>;
 }
 
+export interface WorkbenchReviewBundleSummary {
+  id: string;
+  title: string;
+  summary: string;
+  sourceDocumentId?: string;
+  sourcePath?: string;
+  documentKind?: string;
+  syncRunId?: string;
+  severity: string;
+  blockingLevel: "none" | "review" | "conflict";
+  pendingItemCount: number;
+  lowSeverityCount: number;
+  mediumSeverityCount: number;
+  highSeverityCount: number;
+  characterCandidateCount: number;
+  relationshipCandidateCount: number;
+  foreshadowCandidateCount: number;
+  timelineCandidateCount: number;
+  reviewHintCount: number;
+  reviewKinds: string[];
+  riskNature: string;
+  riskCategories: string[];
+  riskReasons: string[];
+  recommendedActions: string[];
+  autoApprovalReasons: string[];
+  sourceRefCount: number;
+  latestReferenceKind?: string;
+  latestEvidenceQuote?: string;
+  impactSummary?: WorkbenchImpactSummary;
+  isAutoApprovable: boolean;
+  items: WorkbenchReviewItemSummary[];
+}
+
 export interface WorkbenchReviewStats {
+  bundleCount: number;
+  autoApprovableBundleCount: number;
   pendingCount: number;
   lowSeverityCount: number;
   mediumSeverityCount: number;
   highSeverityCount: number;
 }
 
-interface WorkbenchSourceDocumentIndex {
+export interface WorkbenchSourceRefSummary {
   id: string;
-  relativePath: string;
-  documentKind: string;
+  assetType: string;
+  assetId: string;
+  referenceKind: string;
+  locator: string;
+  sourceDocumentId?: string;
+  sourcePath?: string;
+  documentKind?: string;
+  evidenceQuote?: string;
+  updatedAt: string;
+}
+
+interface WorkbenchSourceDocumentIndex extends WorkbenchSourceDocumentContext {
   syncStatus: string;
   lastModifiedAt: string;
 }
@@ -121,14 +174,13 @@ export interface WorkbenchProjectSnapshot {
   graph: WorkbenchCharacterGraph;
   latestChapter?: ChapterCard;
   fileSources: WorkbenchFileSourceSummary[];
+  pendingReviewBundles: WorkbenchReviewBundleSummary[];
+  pendingConflictBundles: WorkbenchReviewBundleSummary[];
+  recentSourceRefs: WorkbenchSourceRefSummary[];
   pendingReviews: WorkbenchReviewItemSummary[];
   reviewStats: WorkbenchReviewStats;
 }
 
-/**
- * 工作台读服务。
- * 这层位于 repository 之上、页面之下，专门负责把 V2 数据整理成页面友好的读模型。
- */
 export class NovelWorkbenchService {
   private readonly projectCatalogRepository: SqliteProjectCatalogRepository;
   private readonly narrativeAssetRepository: SqliteNarrativeAssetRepository;
@@ -176,35 +228,53 @@ export class NovelWorkbenchService {
       return null;
     }
 
-    const [characters, chapters, volumes, foreshadowCount, fileSources, reviewRows] = await Promise.all([
+    const [characters, chapters, volumes, foreshadows, fileSources, reviewRows, sourceRefs, assetUpdates] = await Promise.all([
       this.narrativeAssetRepository.listCharacters(work.id),
       this.narrativeAssetRepository.listChapters(work.id),
       this.listVolumes(work.id),
-      this.countForeshadows(work.id),
+      this.listForeshadows(work.id),
       this.syncSourceRepository.listFileSources(work.id),
       this.syncWorkflowRepository.listReviewQueue(work.id, "pending"),
+      this.syncWorkflowRepository.listSourceRefs({ projectId: work.id }),
+      this.syncWorkflowRepository.listAssetUpdates({ projectId: work.id }),
     ]);
 
     const sourceDocumentsByFileSource = new Map<string, WorkbenchSourceDocumentIndex[]>();
-    const sourceDocumentById = new Map<string, { relativePath: string; documentKind: string }>();
+    const sourceDocumentById = new Map<string, WorkbenchSourceDocumentIndex>();
 
     for (const fileSource of fileSources) {
       const sourceDocuments = this.sortSourceDocuments(await this.syncSourceRepository.listSourceDocuments(fileSource.id));
       sourceDocumentsByFileSource.set(fileSource.id, sourceDocuments);
 
       for (const sourceDocument of sourceDocuments) {
-        sourceDocumentById.set(sourceDocument.id, {
-          relativePath: sourceDocument.relativePath,
-          documentKind: sourceDocument.documentKind,
-        });
+        sourceDocumentById.set(sourceDocument.id, sourceDocument);
       }
     }
 
-    const graph = this.buildCharacterGraph(characters);
-    const pendingReviews = reviewRows
-      .slice(0, 12)
-      .map((review) => this.createReviewSummary(review, sourceDocumentById));
-    const reviewStats = this.createReviewStats(reviewRows);
+    const relationSourceRefs = this.createSourceRefIndex(
+      sourceRefs.filter((sourceRef) => sourceRef.assetType === "character-relationship"),
+    );
+    const sourceRefsByDocumentId = this.createSourceDocumentSourceRefIndex(sourceRefs);
+    const assetUpdatesByDocumentId = this.createAssetUpdateIndex(assetUpdates);
+    const graph = this.buildCharacterGraph(characters, relationSourceRefs, sourceDocumentById);
+    const pendingReviews = reviewRows.map((review) => this.createReviewSummary(review, sourceDocumentById));
+    const pendingReviewBundles = this.createReviewBundles({
+      reviews: pendingReviews,
+      sourceRefsByDocumentId,
+      assetUpdatesByDocumentId,
+      sourceDocumentById,
+      characters,
+      chapters,
+      volumes,
+      foreshadows,
+    });
+    const pendingConflictBundles = this.createPendingConflictBundles(pendingReviewBundles);
+    const recentSourceRefs = sourceRefs.slice(0, 10).map((sourceRef) => this.createSourceRefSummary(sourceRef, sourceDocumentById));
+    const reviewStats = this.createReviewStats(
+      reviewRows,
+      pendingReviewBundles.length,
+      pendingReviewBundles.filter((bundle) => bundle.isAutoApprovable).length,
+    );
     const fileSourceSummaries = fileSources.map((fileSource) =>
       this.createFileSourceSummary(fileSource, sourceDocumentsByFileSource.get(fileSource.id) ?? [], reviewRows),
     );
@@ -215,7 +285,7 @@ export class NovelWorkbenchService {
         volumeCount: volumes.length,
         chapterCount: chapters.length,
         characterCount: characters.length,
-        foreshadowCount,
+        foreshadowCount: foreshadows.length,
         relationCount: graph.edges.length,
         sourceCount: fileSourceSummaries.length,
         pendingReviewCount: reviewRows.length,
@@ -226,6 +296,9 @@ export class NovelWorkbenchService {
       graph,
       latestChapter: chapters.at(-1),
       fileSources: fileSourceSummaries,
+      pendingReviewBundles,
+      pendingConflictBundles,
+      recentSourceRefs,
       pendingReviews,
       reviewStats,
     };
@@ -247,9 +320,9 @@ export class NovelWorkbenchService {
         title: volumeRow.title,
         goal: volumeRow.phaseGoal,
         mainConflict: volumeRow.mainConflict,
-        entryHook: String(extraJson.entryHook ?? "待补充卷钩子"),
-        climax: String(extraJson.climax ?? "待补充卷高潮"),
-        payoff: String(extraJson.payoff ?? "待补充本卷兑现点"),
+        entryHook: String(extraJson.entryHook ?? "Pending opening hook"),
+        climax: String(extraJson.climax ?? "Pending climax beat"),
+        payoff: String(extraJson.payoff ?? "Pending payoff beat"),
         mustDeliverInfo: readStringArray(extraJson.mustDeliverInfo),
         keyCharacters: readStringArray(extraJson.keyCharacters),
         plannedChapterCount: volumeRow.plannedChapterCount,
@@ -257,16 +330,31 @@ export class NovelWorkbenchService {
     });
   }
 
-  private async countForeshadows(projectId: string): Promise<number> {
+  private async listForeshadows(projectId: string): Promise<ForeshadowLedgerItem[]> {
     const foreshadowRows = await this.client.db
-      .select({ id: foreshadowsV2Table.id })
+      .select()
       .from(foreshadowsV2Table)
-      .where(eq(foreshadowsV2Table.projectId, projectId));
+      .where(eq(foreshadowsV2Table.projectId, projectId))
+      .orderBy(asc(foreshadowsV2Table.createdAt));
 
-    return foreshadowRows.length;
+    return foreshadowRows.map((foreshadowRow) => ({
+      id: foreshadowRow.id,
+      workId: foreshadowRow.projectId,
+      seedChapterId: foreshadowRow.seedChapterId,
+      description: foreshadowRow.description,
+      narrativePurpose: foreshadowRow.narrativePurpose,
+      expectedPayoffVolumeId: undefined,
+      expectedPayoffChapterId: foreshadowRow.expectedPayoffChapterId ?? undefined,
+      actualPayoffChapterId: foreshadowRow.actualPayoffChapterId ?? undefined,
+      status: foreshadowRow.payoffStatus as ForeshadowLedgerItem["status"],
+    }));
   }
 
-  private buildCharacterGraph(characters: CharacterCard[]): WorkbenchCharacterGraph {
+  private buildCharacterGraph(
+    characters: CharacterCard[],
+    relationSourceRefs: Map<string, SyncSourceRefRecord[]>,
+    sourceDocumentById: Map<string, WorkbenchSourceDocumentIndex>,
+  ): WorkbenchCharacterGraph {
     const nodes: WorkbenchCharacterGraphNode[] = characters.map((character) => ({
       characterId: character.id,
       name: character.name,
@@ -279,6 +367,13 @@ export class NovelWorkbenchService {
 
     for (const character of characters) {
       for (const relationship of character.relationships) {
+        const relationAssetId = `${character.id}:${relationship.targetCharacterId}:${relationship.publicLabel}`;
+        const relationRefRows = relationSourceRefs.get(relationAssetId) ?? [];
+        const latestRelationRef = relationRefRows[0];
+        const latestRelationDocument = latestRelationRef?.sourceDocumentId
+          ? sourceDocumentById.get(latestRelationRef.sourceDocumentId)
+          : undefined;
+
         edges.push({
           sourceCharacterId: character.id,
           sourceCharacterName: character.name,
@@ -288,6 +383,9 @@ export class NovelWorkbenchService {
           privateLabel: relationship.privateLabel,
           trustLevel: relationship.trustLevel,
           tensionLevel: relationship.tensionLevel,
+          sourceRefCount: relationRefRows.length,
+          latestSourcePath: latestRelationDocument?.relativePath,
+          latestEvidenceQuote: latestRelationRef?.evidenceQuote,
         });
       }
     }
@@ -302,19 +400,26 @@ export class NovelWorkbenchService {
       documentKind: string;
       syncStatus: string;
       lastModifiedAt: string;
+      mappedScopeType?: string;
+      mappedScopeId?: string;
     }>,
   ): WorkbenchSourceDocumentIndex[] {
-    return [...documents].sort((left, right) => right.lastModifiedAt.localeCompare(left.lastModifiedAt, "zh-CN"));
+    return [...documents]
+      .sort((left, right) => right.lastModifiedAt.localeCompare(left.lastModifiedAt, "zh-CN"))
+      .map((document) => ({
+        id: document.id,
+        relativePath: document.relativePath,
+        documentKind: document.documentKind,
+        syncStatus: document.syncStatus,
+        lastModifiedAt: document.lastModifiedAt,
+        mappedScopeType: document.mappedScopeType,
+        mappedScopeId: document.mappedScopeId,
+      }));
   }
 
   private createFileSourceSummary(
     fileSource: SyncFileSourceRecord,
-    sourceDocuments: Array<{
-      id: string;
-      relativePath: string;
-      syncStatus: string;
-      lastModifiedAt: string;
-    }>,
+    sourceDocuments: WorkbenchSourceDocumentIndex[],
     reviewRows: SyncReviewQueueRecord[],
   ): WorkbenchFileSourceSummary {
     const sourceDocumentIdSet = new Set(sourceDocuments.map((document) => document.id));
@@ -345,16 +450,19 @@ export class NovelWorkbenchService {
 
   private createReviewSummary(
     review: SyncReviewQueueRecord,
-    sourceDocumentById: Map<string, { relativePath: string; documentKind: string }>,
+    sourceDocumentById: Map<string, WorkbenchSourceDocumentIndex>,
   ): WorkbenchReviewItemSummary {
     const sourceDocument = review.sourceDocumentId ? sourceDocumentById.get(review.sourceDocumentId) : undefined;
 
     return {
       id: review.id,
+      syncRunId: review.syncRunId,
       reviewKind: review.reviewKind,
       severity: review.severity,
       status: review.status,
       summary: review.summary,
+      sourceType: review.sourceType,
+      sourceId: review.sourceId,
       sourceDocumentId: review.sourceDocumentId,
       sourcePath: sourceDocument?.relativePath,
       documentKind: sourceDocument?.documentKind,
@@ -362,13 +470,308 @@ export class NovelWorkbenchService {
     };
   }
 
-  private createReviewStats(reviews: SyncReviewQueueRecord[]): WorkbenchReviewStats {
+  private createReviewBundles(input: {
+    reviews: WorkbenchReviewItemSummary[];
+    sourceRefsByDocumentId: Map<string, SyncSourceRefRecord[]>;
+    assetUpdatesByDocumentId: Map<string, SyncAssetUpdateRecord[]>;
+    sourceDocumentById: Map<string, WorkbenchSourceDocumentIndex>;
+    characters: CharacterCard[];
+    chapters: ChapterCard[];
+    volumes: VolumeOutline[];
+    foreshadows: ForeshadowLedgerItem[];
+  }): WorkbenchReviewBundleSummary[] {
+    const bundleMap = new Map<string, WorkbenchReviewBundleSummary>();
+
+    for (const review of input.reviews) {
+      const bundleId = this.buildReviewBundleId(review);
+      const existingBundle = bundleMap.get(bundleId);
+      const reviewHints = Array.isArray(review.detailJson.reviewHints) ? review.detailJson.reviewHints.length : 0;
+      const sourceRefRows = review.sourceDocumentId ? (input.sourceRefsByDocumentId.get(review.sourceDocumentId) ?? []) : [];
+      const latestSourceRef = sourceRefRows[0];
+      const riskAssessment = assessReviewRisk({
+        reviewKind: review.reviewKind,
+        severity: review.severity,
+        detailJson: review.detailJson,
+      });
+      const impactSummary = review.sourceDocumentId
+        ? buildReviewBundleImpactSummary({
+            sourceDocument: input.sourceDocumentById.get(review.sourceDocumentId),
+            assetUpdates: input.assetUpdatesByDocumentId.get(review.sourceDocumentId) ?? [],
+            characters: input.characters,
+            chapters: input.chapters,
+            volumes: input.volumes,
+            foreshadows: input.foreshadows,
+          })
+        : undefined;
+
+      if (!existingBundle) {
+        bundleMap.set(bundleId, {
+          id: bundleId,
+          title: review.sourcePath ?? `Source ${this.buildSyncRunLabel(review.syncRunId)}`,
+          summary: this.buildReviewBundleSummary(review, 1),
+          sourceDocumentId: review.sourceDocumentId,
+          sourcePath: review.sourcePath,
+          documentKind: review.documentKind,
+          syncRunId: review.syncRunId,
+          severity: review.severity,
+          blockingLevel: riskAssessment.blockingLevel,
+          pendingItemCount: 1,
+          lowSeverityCount: review.severity === "low" ? 1 : 0,
+          mediumSeverityCount: review.severity === "medium" ? 1 : 0,
+          highSeverityCount: review.severity === "high" ? 1 : 0,
+          characterCandidateCount: this.readNumericSignal(review.detailJson, "characterCandidateCount"),
+          relationshipCandidateCount: this.readNumericSignal(review.detailJson, "relationshipCandidateCount"),
+          foreshadowCandidateCount: this.readNumericSignal(review.detailJson, "foreshadowCandidateCount"),
+          timelineCandidateCount: this.readNumericSignal(review.detailJson, "timelineCandidateCount"),
+          reviewHintCount: reviewHints,
+          reviewKinds: [review.reviewKind],
+          riskNature: riskAssessment.nature,
+          riskCategories: riskAssessment.categories,
+          riskReasons: riskAssessment.reasons,
+          recommendedActions: riskAssessment.recommendedActions,
+          autoApprovalReasons: riskAssessment.autoApprovalReasons,
+          sourceRefCount: sourceRefRows.length,
+          latestReferenceKind: latestSourceRef?.referenceKind,
+          latestEvidenceQuote: latestSourceRef?.evidenceQuote,
+          impactSummary,
+          isAutoApprovable: false,
+          items: [review],
+        });
+        continue;
+      }
+
+      existingBundle.items.push(review);
+      existingBundle.pendingItemCount += 1;
+      existingBundle.lowSeverityCount += review.severity === "low" ? 1 : 0;
+      existingBundle.mediumSeverityCount += review.severity === "medium" ? 1 : 0;
+      existingBundle.highSeverityCount += review.severity === "high" ? 1 : 0;
+      existingBundle.characterCandidateCount += this.readNumericSignal(review.detailJson, "characterCandidateCount");
+      existingBundle.relationshipCandidateCount += this.readNumericSignal(review.detailJson, "relationshipCandidateCount");
+      existingBundle.foreshadowCandidateCount += this.readNumericSignal(review.detailJson, "foreshadowCandidateCount");
+      existingBundle.timelineCandidateCount += this.readNumericSignal(review.detailJson, "timelineCandidateCount");
+      existingBundle.reviewHintCount += reviewHints;
+      existingBundle.riskCategories = this.mergeUniqueStrings(existingBundle.riskCategories, riskAssessment.categories);
+      existingBundle.riskReasons = this.mergeUniqueStrings(existingBundle.riskReasons, riskAssessment.reasons);
+      existingBundle.recommendedActions = this.mergeUniqueStrings(existingBundle.recommendedActions, riskAssessment.recommendedActions);
+      existingBundle.autoApprovalReasons = this.mergeUniqueStrings(existingBundle.autoApprovalReasons, riskAssessment.autoApprovalReasons);
+      existingBundle.sourceRefCount = Math.max(existingBundle.sourceRefCount, sourceRefRows.length);
+      existingBundle.latestReferenceKind ??= latestSourceRef?.referenceKind;
+      existingBundle.latestEvidenceQuote ??= latestSourceRef?.evidenceQuote;
+      existingBundle.impactSummary ??= impactSummary;
+      if (!existingBundle.reviewKinds.includes(review.reviewKind)) {
+        existingBundle.reviewKinds.push(review.reviewKind);
+      }
+      if (this.getSeverityRank(review.severity) > this.getSeverityRank(existingBundle.severity)) {
+        existingBundle.severity = review.severity;
+      }
+      if (this.getBlockingLevelRank(riskAssessment.blockingLevel) > this.getBlockingLevelRank(existingBundle.blockingLevel)) {
+        existingBundle.blockingLevel = riskAssessment.blockingLevel;
+      }
+      if (this.getRiskNatureRank(riskAssessment.nature) > this.getRiskNatureRank(existingBundle.riskNature)) {
+        existingBundle.riskNature = riskAssessment.nature;
+      }
+      existingBundle.summary = this.buildReviewBundleSummary(review, existingBundle.pendingItemCount);
+    }
+
+    return [...bundleMap.values()]
+      .map((bundle) => ({
+        ...bundle,
+        isAutoApprovable: this.isReviewBundleAutoApprovable(bundle),
+      }))
+      .sort((left, right) => {
+        const severityDelta = this.getSeverityRank(right.severity) - this.getSeverityRank(left.severity);
+        if (severityDelta !== 0) {
+          return severityDelta;
+        }
+        return right.pendingItemCount - left.pendingItemCount;
+      });
+  }
+
+  private createPendingConflictBundles(
+    bundles: WorkbenchReviewBundleSummary[],
+  ): WorkbenchReviewBundleSummary[] {
+    return bundles
+      .filter((bundle) => bundle.blockingLevel !== "none")
+      .sort((left, right) => {
+        const blockingDelta = this.getBlockingLevelRank(right.blockingLevel) - this.getBlockingLevelRank(left.blockingLevel);
+        if (blockingDelta !== 0) {
+          return blockingDelta;
+        }
+        return this.getSeverityRank(right.severity) - this.getSeverityRank(left.severity);
+      })
+      .slice(0, 6);
+  }
+
+  private createSourceRefSummary(
+    sourceRef: SyncSourceRefRecord,
+    sourceDocumentById: Map<string, WorkbenchSourceDocumentIndex>,
+  ): WorkbenchSourceRefSummary {
+    const sourceDocument = sourceRef.sourceDocumentId ? sourceDocumentById.get(sourceRef.sourceDocumentId) : undefined;
+
     return {
+      id: sourceRef.id,
+      assetType: sourceRef.assetType,
+      assetId: sourceRef.assetId,
+      referenceKind: sourceRef.referenceKind,
+      locator: sourceRef.locator,
+      sourceDocumentId: sourceRef.sourceDocumentId,
+      sourcePath: sourceDocument?.relativePath,
+      documentKind: sourceDocument?.documentKind,
+      evidenceQuote: sourceRef.evidenceQuote,
+      updatedAt: sourceRef.updatedAt,
+    };
+  }
+
+  private createSourceRefIndex(sourceRefs: SyncSourceRefRecord[]): Map<string, SyncSourceRefRecord[]> {
+    const index = new Map<string, SyncSourceRefRecord[]>();
+
+    for (const sourceRef of sourceRefs) {
+      const bucket = index.get(sourceRef.assetId);
+      if (bucket) {
+        bucket.push(sourceRef);
+      } else {
+        index.set(sourceRef.assetId, [sourceRef]);
+      }
+    }
+
+    return index;
+  }
+
+  private createSourceDocumentSourceRefIndex(sourceRefs: SyncSourceRefRecord[]): Map<string, SyncSourceRefRecord[]> {
+    const index = new Map<string, SyncSourceRefRecord[]>();
+
+    for (const sourceRef of sourceRefs) {
+      if (!sourceRef.sourceDocumentId) {
+        continue;
+      }
+
+      const bucket = index.get(sourceRef.sourceDocumentId);
+      if (bucket) {
+        bucket.push(sourceRef);
+      } else {
+        index.set(sourceRef.sourceDocumentId, [sourceRef]);
+      }
+    }
+
+    return index;
+  }
+
+  private createAssetUpdateIndex(assetUpdates: SyncAssetUpdateRecord[]): Map<string, SyncAssetUpdateRecord[]> {
+    const index = new Map<string, SyncAssetUpdateRecord[]>();
+
+    for (const assetUpdate of assetUpdates) {
+      if (!assetUpdate.sourceDocumentId) {
+        continue;
+      }
+
+      const bucket = index.get(assetUpdate.sourceDocumentId);
+      if (bucket) {
+        bucket.push(assetUpdate);
+      } else {
+        index.set(assetUpdate.sourceDocumentId, [assetUpdate]);
+      }
+    }
+
+    return index;
+  }
+
+  private createReviewStats(
+    reviews: SyncReviewQueueRecord[],
+    bundleCount: number,
+    autoApprovableBundleCount: number,
+  ): WorkbenchReviewStats {
+    return {
+      bundleCount,
+      autoApprovableBundleCount,
       pendingCount: reviews.length,
       lowSeverityCount: reviews.filter((review) => review.severity === "low").length,
       mediumSeverityCount: reviews.filter((review) => review.severity === "medium").length,
       highSeverityCount: reviews.filter((review) => review.severity === "high").length,
     };
+  }
+
+  private buildReviewBundleId(review: WorkbenchReviewItemSummary): string {
+    if (review.sourceDocumentId) {
+      return `source-document:${review.sourceDocumentId}`;
+    }
+    if (review.syncRunId) {
+      return `sync-run:${review.syncRunId}:${review.sourceType}:${review.sourceId ?? review.reviewKind}`;
+    }
+    return `fallback:${review.sourceType}:${review.sourceId ?? review.reviewKind}`;
+  }
+
+  private buildReviewBundleSummary(review: WorkbenchReviewItemSummary, pendingItemCount: number): string {
+    const originLabel = review.documentKind ?? review.reviewKind;
+    return `${pendingItemCount} review items / ${originLabel}`;
+  }
+
+  private buildSyncRunLabel(syncRunId?: string): string {
+    return syncRunId ? syncRunId.slice(0, 8) : "pending";
+  }
+
+  private readNumericSignal(detailJson: Record<string, unknown>, field: string): number {
+    const value = detailJson[field];
+    return typeof value === "number" ? value : 0;
+  }
+
+  private isReviewBundleAutoApprovable(bundle: WorkbenchReviewBundleSummary): boolean {
+    return (
+      bundle.blockingLevel === "none" &&
+      bundle.mediumSeverityCount === 0 &&
+      bundle.highSeverityCount === 0 &&
+      bundle.reviewHintCount === 0 &&
+      bundle.riskCategories.length === 0 &&
+      bundle.autoApprovalReasons.length > 0
+    );
+  }
+
+  private getSeverityRank(severity: string): number {
+    switch (severity) {
+      case "high":
+        return 3;
+      case "medium":
+        return 2;
+      case "low":
+        return 1;
+      default:
+        return 0;
+    }
+  }
+
+  private getBlockingLevelRank(level: "none" | "review" | "conflict"): number {
+    switch (level) {
+      case "conflict":
+        return 2;
+      case "review":
+        return 1;
+      default:
+        return 0;
+    }
+  }
+
+  private getRiskNatureRank(nature: string): number {
+    switch (nature) {
+      case "factual-conflict":
+        return 4;
+      case "format-blocker":
+        return 3;
+      case "information-gap":
+        return 2;
+      case "confidence-review":
+        return 1;
+      default:
+        return 0;
+    }
+  }
+
+  private mergeUniqueStrings(base: string[], additions: string[]): string[] {
+    const merged = new Set(base);
+    for (const item of additions) {
+      if (item.trim()) {
+        merged.add(item.trim());
+      }
+    }
+    return [...merged];
   }
 
   private createEmptyStats(): WorkbenchProjectStats {

@@ -21,7 +21,10 @@
     "web:check": "npm --workspace @aifiction/web run build",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run db:check && npm run worker:check && npm run web:check",
-    "worker:sync": "npm --workspace @aifiction/worker run sync --"
+    "worker:sync": "npm --workspace @aifiction/worker run sync --",
+    "db:workbench-smoke": "npm --workspace @aifiction/data run db:workbench-smoke",
+    "machine:context": "node scripts/machine-context.mjs",
+    "encoding:check": "node scripts/encoding-check.mjs"
   },
   "overrides": {
     "react": "18.2.0",

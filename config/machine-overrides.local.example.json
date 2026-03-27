@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "defaults": {},
+  "profiles": [
+    {
+      "id": "replace-with-your-machine-id",
+      "label": "My local override",
+      "match": {
+        "computerName": "MY-PC"
+      },
+      "workspaceRoot": "D:/AIWorkSpace/AiFiction",
+      "git": {
+        "safeDirectory": "D:/AIWorkSpace/AiFiction",
+        "remoteUrl": "git@github.com:your-name/AiFiction.git",
+        "requiresSafeDirectory": true
+      },
+      "ssh": {
+        "mode": "direct-host",
+        "host": "github.com",
+        "user": "git",
+        "configPath": "%USERPROFILE%/.ssh/config",
+        "identityHint": "Describe the SSH key or alias used on this machine."
+      },
+      "web": {
+        "preferredPort": 8080
+      },
+      "storage": {
+        "databasePath": "storage/db/aifiction.sqlite"
+      },
+      "notes": [
+        "Copy this file to config/machine-overrides.local.json and adjust only local machine details."
+      ]
+    }
+  ]
+}

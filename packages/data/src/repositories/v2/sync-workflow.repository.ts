@@ -46,6 +46,19 @@ export interface SyncAssetUpdateRecord {
   updatedAt: string;
 }
 
+export interface SyncSourceRefRecord {
+  id: string;
+  projectId: string;
+  assetType: string;
+  assetId: string;
+  sourceDocumentId?: string;
+  artifactVersionId?: string;
+  referenceKind: string;
+  locator: string;
+  evidenceQuote?: string;
+  updatedAt: string;
+}
+
 /**
  * SQLite 下的同步工作流仓储。
  * 负责目录扫描运行记录、建议更新、审查项与来源引用等运行态数据。
@@ -456,6 +469,36 @@ export class SqliteSyncWorkflowRepository {
     return sourceRefId;
   }
 
+  async listSourceRefs(input: {
+    projectId: string;
+    assetType?: string;
+    assetId?: string;
+    sourceDocumentId?: string;
+    limit?: number;
+  }): Promise<SyncSourceRefRecord[]> {
+    await ensureSqliteV2Bootstrap(this.client);
+
+    const filters = [eq(sourceRefsV2Table.projectId, input.projectId)];
+    if (input.assetType) {
+      filters.push(eq(sourceRefsV2Table.assetType, input.assetType));
+    }
+    if (input.assetId) {
+      filters.push(eq(sourceRefsV2Table.assetId, input.assetId));
+    }
+    if (input.sourceDocumentId) {
+      filters.push(eq(sourceRefsV2Table.sourceDocumentId, input.sourceDocumentId));
+    }
+
+    const query = this.client.db
+      .select()
+      .from(sourceRefsV2Table)
+      .where(and(...filters))
+      .orderBy(desc(sourceRefsV2Table.updatedAt));
+    const rows = input.limit ? await query.limit(input.limit) : await query;
+
+    return rows.map((row) => this.mapSourceRefRow(row));
+  }
+
   private mapReviewRow(row: typeof reviewQueueV2Table.$inferSelect): SyncReviewQueueRecord {
     return {
       id: row.id,
@@ -489,6 +532,21 @@ export class SqliteSyncWorkflowRepository {
       proposedPayloadJson: row.proposedPayloadJson as Record<string, unknown>,
       appliedStatus: row.appliedStatus,
       appliedAt: row.appliedAt ?? undefined,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  private mapSourceRefRow(row: typeof sourceRefsV2Table.$inferSelect): SyncSourceRefRecord {
+    return {
+      id: row.id,
+      projectId: row.projectId,
+      assetType: row.assetType,
+      assetId: row.assetId,
+      sourceDocumentId: row.sourceDocumentId ?? undefined,
+      artifactVersionId: row.artifactVersionId ?? undefined,
+      referenceKind: row.referenceKind,
+      locator: row.locator,
+      evidenceQuote: row.evidenceQuote ?? undefined,
       updatedAt: row.updatedAt,
     };
   }

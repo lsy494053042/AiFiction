@@ -15,21 +15,17 @@ function toTextareaValue(values: string[]): string {
   return values.join("\n");
 }
 
-/**
- * 手工维护兜底面板。
- * 自动维护是主链，手工录入只作为修正和补录入口，所以这里统一折叠收口。
- */
 export function WorkManualPanel({ snapshot }: WorkManualPanelProps) {
   const { work, volumes } = snapshot;
 
   return (
     <article className="content-card">
       <div className="section-heading">
-        <p>Manual Override</p>
+        <p>手工兜底</p>
         <h2>高级手工维护</h2>
       </div>
       <p className="panel-copy">
-        这里保留手工修正入口，但它只是兜底。后续主流程会越来越依赖本地目录同步和审查队列，而不是大量手填。
+        这里保留手工修正入口，但它只作为兜底。后续主流程会越来越依赖本地目录同步和审查队列，而不是大量手填。
       </p>
 
       <details className="manual-details">

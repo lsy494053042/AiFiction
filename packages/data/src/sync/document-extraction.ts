@@ -94,7 +94,9 @@ const timeMarkers = [
 ];
 
 /**
- * 缁撴瀯鍖栨娊鍙栭瑙堛€? * 褰撳墠鍏堢敤鍚彂寮忚鍒欐妸瑙掕壊銆佸叧绯汇€佷紡绗斻€佹椂闂寸嚎鍊欓€夋彁鍑烘潵锛屽悗缁彲鏇挎崲鎴愭ā鍨嬫娊鍙栥€? */
+ * 结构化抽取预览。
+ * 当前先用启发式规则把角色、关系、伏笔、时间线候选提取出来，后续可替换成模型抽取。
+ */
 export function extractSourceDocumentPreview(input: {
   textContent: string;
   analysis: SourceDocumentAnalysis;
@@ -135,7 +137,7 @@ export function extractSourceDocumentPreview(input: {
 }
 
 /**
- * 灏嗙粨鏋勫寲鎶藉彇棰勮鏍煎紡鍖栨垚 Markdown锛屾柟渚夸汉宸ュ揩閫熷鏌ャ€? */
+ * 鐏忓棛绮ㄩ弸鍕閹惰棄褰囨０鍕潔閺嶇厧绱￠崠鏍ㄥ灇 Markdown閿涘本鏌熸笟澶告眽瀹搞儱鎻╅柅鐔奉吀閺屻儯鈧? */
 export function formatExtractionPreviewArtifact(input: SourceDocumentExtractionPreview): string {
   const characterLines = input.characters.length
     ? input.characters.map((item) => `- ${item.name} | mentions=${item.mentionCount} | confidence=${item.confidenceLevel}`).join("\n")

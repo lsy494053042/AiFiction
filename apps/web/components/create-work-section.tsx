@@ -1,18 +1,14 @@
 import { createWorkAction } from "../app/workbench-actions";
 
-/**
- * 首页快速创建入口。
- * 默认只要求最少必填信息，其他配置收进折叠区，减少首次录入负担。
- */
 export function CreateWorkSection() {
   return (
     <section className="content-card" id="quick-create">
       <div className="section-heading">
-        <p>Quick Create</p>
-        <h2>先建作品壳，再让系统慢慢接手维护</h2>
+        <p>快速创建</p>
+        <h2>先建作品壳，再让系统逐步接手维护</h2>
       </div>
       <p className="panel-copy">
-        首页只保留最少必填项。受众、约束、商业卖点这些信息可以等作品建立后再慢慢补。
+        首页只保留最少必填项。受众、约束、商业卖点这些信息可以等作品建立后再逐步补充。
       </p>
 
       <form action={createWorkAction} className="editor-form-grid compact-form-grid">
@@ -67,7 +63,7 @@ export function CreateWorkSection() {
               </label>
               <label className="field-block field-block-wide">
                 <span>硬约束</span>
-                <textarea name="hardConstraints" rows={2} placeholder="一行一个，例如主角不能无代价跨阶" />
+                <textarea name="hardConstraints" rows={2} placeholder="一行一个，例如主角不能无代价越阶" />
               </label>
               <label className="field-block field-block-wide">
                 <span>内容边界提示</span>
