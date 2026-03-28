@@ -23,6 +23,7 @@ import {
   formatExtractionPreviewArtifact,
   type SourceDocumentExtractionPreview,
 } from "./document-extraction";
+import { SyncReviewQueueService, type AutoRouteProjectReviewItemsResult } from "./review-queue.service";
 
 export interface BindProjectFileSourceInput {
   projectId: string;
@@ -39,6 +40,17 @@ export interface BindProjectFileSourceInput {
   };
 }
 
+export interface FileSourceAutoRouteSummary {
+  scannedReviewCount: number;
+  approvedReviewCount: number;
+  remainingReviewCount: number;
+  conflictReviewCount: number;
+  informationGapReviewCount: number;
+  confidenceReviewCount: number;
+  formatBlockerReviewCount: number;
+  factualConflictReviewCount: number;
+}
+
 export interface FileSourceScanSummary {
   runId: string;
   fileSource: SyncFileSourceRecord;
@@ -48,6 +60,7 @@ export interface FileSourceScanSummary {
   modifiedCount: number;
   missingCount: number;
   unchangedCount: number;
+  autoRoute: FileSourceAutoRouteSummary;
 }
 
 interface CollectedFile {
@@ -71,6 +84,22 @@ interface ChangedDocumentProcessingInput {
   changeKind: string;
 }
 
+interface ChangedDocumentProcessingResult {
+  processingStatus: string;
+  generatedArtifactId?: string;
+  generatedArtifactVersionId?: string;
+}
+
+interface ChangedRunItemSummary {
+  syncRunId: string;
+  runItemId: string;
+  sourceDocumentId: string;
+  relativePath: string;
+  changeKind: string;
+  generatedArtifactId?: string;
+  generatedArtifactVersionId?: string;
+}
+
 const defaultScanPolicy: NormalizedScanPolicy = {
   includeExtensions: [".md", ".txt", ".docx"],
   excludeDirectories: [".git", ".next", "dist", "node_modules"],
@@ -85,12 +114,14 @@ export class NovelProjectSyncService {
   private readonly projectCatalogRepository: SqliteProjectCatalogRepository;
   private readonly syncSourceRepository: SqliteSyncSourceRepository;
   private readonly syncWorkflowRepository: SqliteSyncWorkflowRepository;
+  private readonly reviewQueueService: SyncReviewQueueService;
 
   constructor(private readonly client: SqliteClient = getSqliteClient()) {
     this.artifactRepository = new SqliteArtifactRepository(client);
     this.projectCatalogRepository = new SqliteProjectCatalogRepository(client);
     this.syncSourceRepository = new SqliteSyncSourceRepository(client);
     this.syncWorkflowRepository = new SqliteSyncWorkflowRepository(client);
+    this.reviewQueueService = new SyncReviewQueueService(client);
   }
 
   async bindProjectFileSource(input: BindProjectFileSourceInput): Promise<SyncFileSourceRecord> {
@@ -159,6 +190,8 @@ export class NovelProjectSyncService {
     let modifiedCount = 0;
     let missingCount = 0;
     let unchangedCount = 0;
+    let autoRoute = this.createEmptyAutoRouteSummary();
+    const changedRunItems: ChangedRunItemSummary[] = [];
 
     try {
       const seenRelativePaths = new Set<string>();
@@ -214,7 +247,7 @@ export class NovelProjectSyncService {
             summary: `${file.relativePath} => ${changeKind}`,
           });
 
-          await this.processChangedDocument({
+          const processingResult = await this.processChangedDocument({
             runId,
             runItemId,
             fileSource,
@@ -222,6 +255,16 @@ export class NovelProjectSyncService {
             absolutePath: file.absolutePath,
             fileBuffer,
             changeKind,
+          });
+
+          changedRunItems.push({
+            syncRunId: runId,
+            runItemId,
+            sourceDocumentId: documentRecord.id,
+            relativePath: documentRecord.relativePath,
+            changeKind,
+            generatedArtifactId: processingResult.generatedArtifactId,
+            generatedArtifactVersionId: processingResult.generatedArtifactVersionId,
           });
         }
       }
@@ -249,6 +292,20 @@ export class NovelProjectSyncService {
         });
       }
 
+      if (changedRunItems.length > 0) {
+        const autoRouteResult = await this.reviewQueueService.autoRouteProjectReviewItems({
+          projectId: fileSource.projectId,
+          sourceDocumentIds: changedRunItems.map((item) => item.sourceDocumentId),
+          syncRunId: runId,
+          decisionNote: "System auto-approved low-risk review items after sync.",
+        });
+        autoRoute = this.toAutoRouteSummary(autoRouteResult);
+
+        for (const changedRunItem of changedRunItems) {
+          await this.refreshChangedRunItemStatus(changedRunItem);
+        }
+      }
+
       await this.syncSourceRepository.saveFileSource({
         ...fileSource,
         lastScannedAt: scannedAt,
@@ -273,6 +330,7 @@ export class NovelProjectSyncService {
         modifiedCount,
         missingCount,
         unchangedCount,
+        autoRoute,
       };
     } catch (error) {
       await this.syncWorkflowRepository.finishSyncRun({
@@ -291,12 +349,11 @@ export class NovelProjectSyncService {
    * 扫描后处理。
    * 当前先生成摘要 artifact、结构化预览 artifact，并把建议更新写入审查链。
    */
-  private async processChangedDocument(input: ChangedDocumentProcessingInput): Promise<void> {
+  private async processChangedDocument(input: ChangedDocumentProcessingInput): Promise<ChangedDocumentProcessingResult> {
     const loadedContent = loadSourceDocumentText(input.absolutePath, input.fileBuffer);
 
     if (!loadedContent.textContent) {
-      await this.handleUnsupportedDocument(input, loadedContent.unsupportedReason ?? "Unsupported format");
-      return;
+      return this.handleUnsupportedDocument(input, loadedContent.unsupportedReason ?? "Unsupported format");
     }
 
     const analysis = analyzeSourceDocumentText({
@@ -508,6 +565,12 @@ export class NovelProjectSyncService {
       generatedArtifactVersionId: extractionArtifact.artifactVersionId,
       summary: `${input.sourceDocument.relativePath} => summary and extraction preview generated`,
     });
+
+    return {
+      processingStatus: "review_pending",
+      generatedArtifactId: extractionArtifact.artifactId,
+      generatedArtifactVersionId: extractionArtifact.artifactVersionId,
+    };
   }
 
   /**
@@ -516,7 +579,7 @@ export class NovelProjectSyncService {
   private async handleUnsupportedDocument(
     input: ChangedDocumentProcessingInput,
     unsupportedReason: string,
-  ): Promise<void> {
+  ): Promise<ChangedDocumentProcessingResult> {
     const assetUpdateId = await this.syncWorkflowRepository.saveAssetUpdate({
       projectId: input.fileSource.projectId,
       syncRunId: input.runId,
@@ -566,6 +629,10 @@ export class NovelProjectSyncService {
       summary: `${input.sourceDocument.relativePath} => manual review required`,
       errorMessage: unsupportedReason,
     });
+
+    return {
+      processingStatus: "review_pending",
+    };
   }
 
   /**
@@ -683,6 +750,62 @@ export class NovelProjectSyncService {
       referenceKind: "candidate-bundle",
       locator: `${input.sourceDocument.relativePath}#${input.locatorSuffix}`,
       evidenceQuote: input.evidenceQuote,
+    });
+  }
+
+  private createEmptyAutoRouteSummary(): FileSourceAutoRouteSummary {
+    return {
+      scannedReviewCount: 0,
+      approvedReviewCount: 0,
+      remainingReviewCount: 0,
+      conflictReviewCount: 0,
+      informationGapReviewCount: 0,
+      confidenceReviewCount: 0,
+      formatBlockerReviewCount: 0,
+      factualConflictReviewCount: 0,
+    };
+  }
+
+  private toAutoRouteSummary(result?: AutoRouteProjectReviewItemsResult): FileSourceAutoRouteSummary {
+    if (!result) {
+      return this.createEmptyAutoRouteSummary();
+    }
+
+    return {
+      scannedReviewCount: result.scannedReviewCount,
+      approvedReviewCount: result.approvedReviewIds.length,
+      remainingReviewCount: result.reviewReviewIds.length + result.conflictReviewIds.length,
+      conflictReviewCount: result.conflictReviewIds.length,
+      informationGapReviewCount: result.informationGapReviewIds.length,
+      confidenceReviewCount: result.confidenceReviewIds.length,
+      formatBlockerReviewCount: result.formatBlockerReviewIds.length,
+      factualConflictReviewCount: result.factualConflictReviewIds.length,
+    };
+  }
+
+  private async refreshChangedRunItemStatus(input: ChangedRunItemSummary): Promise<void> {
+    const sourceDocument = await this.syncSourceRepository.getSourceDocumentById(input.sourceDocumentId);
+    const processingStatus = sourceDocument?.syncStatus === "synced"
+      ? "auto_applied"
+      : sourceDocument?.syncStatus === "review_rejected"
+        ? "review_rejected"
+        : "review_pending";
+
+    const summary = processingStatus === "auto_applied"
+      ? `${input.relativePath} => low-risk changes auto-applied`
+      : processingStatus === "review_rejected"
+        ? `${input.relativePath} => review rejected during sync`
+        : `${input.relativePath} => awaiting review`;
+
+    await this.syncWorkflowRepository.saveSyncRunItem({
+      id: input.runItemId,
+      syncRunId: input.syncRunId,
+      sourceDocumentId: input.sourceDocumentId,
+      changeKind: input.changeKind,
+      processingStatus,
+      generatedArtifactId: input.generatedArtifactId,
+      generatedArtifactVersionId: input.generatedArtifactVersionId,
+      summary,
     });
   }
 

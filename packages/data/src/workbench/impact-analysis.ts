@@ -1,4 +1,4 @@
-﻿import path from "node:path";
+import path from "node:path";
 
 import type {
   ChapterCard,
@@ -24,6 +24,12 @@ export interface WorkbenchImpactEntry {
   reason: string;
 }
 
+export interface WorkbenchReviewChapterTarget {
+  chapterId: string;
+  label: string;
+  reason: string;
+}
+
 export interface WorkbenchImpactSummary {
   summary: string;
   mappedChapterId?: string;
@@ -35,6 +41,7 @@ export interface WorkbenchImpactSummary {
   downstreamChapterCount: number;
   timelineSignalCount: number;
   topEntries: WorkbenchImpactEntry[];
+  recommendedReviewChapters: WorkbenchReviewChapterTarget[];
 }
 
 export interface ReviewBundleImpactInput {
@@ -105,7 +112,7 @@ export function buildReviewBundleImpactSummary(
         id: matchedCharacter.id,
         type: "character",
         label: matchedCharacter.name,
-        reason: "Existing character facts may need to absorb the new chapter evidence.",
+        reason: "这一章的新证据可能会刷新该角色的既有事实。",
       });
       continue;
     }
@@ -130,8 +137,8 @@ export function buildReviewBundleImpactSummary(
       type: "relationship",
       label: `${sourceCharacter.name} -> ${targetCharacter.name}`,
       reason: existingRelationship
-        ? `May change the existing ${existingRelationship.publicLabel} relationship fact.`
-        : `May create a new ${candidate.relationHint ?? "relationship"} fact between these characters.`,
+        ? `可能会改写当前的“${existingRelationship.publicLabel}”关系事实。`
+        : `可能会在这两个角色之间新增“${candidate.relationHint ?? "关系"}”事实。`,
     });
   }
 
@@ -154,11 +161,11 @@ export function buildReviewBundleImpactSummary(
     : [];
 
   for (const foreshadow of relatedForeshadows) {
-    let reason = "This tracked foreshadow is anchored to the same chapter.";
+    let reason = "这条已跟踪伏笔和当前章节直接相关。";
     if (foreshadow.actualPayoffChapterId === mappedChapter?.id) {
-      reason = "This tracked foreshadow is already marked as paid off in the same chapter.";
+      reason = "这条伏笔已经在当前章节被标记为回收。";
     } else if (foreshadow.expectedPayoffChapterId === mappedChapter?.id) {
-      reason = "This tracked foreshadow is expected to pay off in the same chapter.";
+      reason = "这条伏笔原本就计划在当前章节回收。";
     }
 
     foreshadowEntries.push({
@@ -173,17 +180,23 @@ export function buildReviewBundleImpactSummary(
     foreshadowEntries.push({
       type: "foreshadow",
       label: foreshadowCandidates[0].label,
-      reason: `${foreshadowCandidates.length} new foreshadow signals were extracted from this source.`,
+      reason: `当前文本里抽取到了 ${foreshadowCandidates.length} 条新的伏笔信号。`,
     });
   }
 
-  const downstreamEntries: WorkbenchImpactEntry[] = downstreamChapters.slice(0, 3).map((chapter) => ({
-    id: chapter.id,
-    type: "chapter",
-    label: `Chapter ${chapter.order} / ${chapter.title}`,
+  const recommendedReviewChapters: WorkbenchReviewChapterTarget[] = downstreamChapters.slice(0, 5).map((chapter) => ({
+    chapterId: chapter.id,
+    label: buildChapterLabel(chapter),
     reason: timelineCandidates.length > 0
-      ? "Timeline markers in this source may require a continuity check for later chapters."
-      : "New structured facts in this source may require a quick downstream check.",
+      ? "当前文本出现了时间线标记，建议检查后续章节的连续性。"
+      : "当前文本出现了新事实，建议快速复核后续章节是否受影响。",
+  }));
+
+  const downstreamEntries: WorkbenchImpactEntry[] = recommendedReviewChapters.slice(0, 3).map((chapter) => ({
+    id: chapter.chapterId,
+    type: "chapter",
+    label: chapter.label,
+    reason: chapter.reason,
   }));
 
   const topEntries = dedupeImpactEntries([
@@ -195,29 +208,29 @@ export function buildReviewBundleImpactSummary(
 
   const summaryParts: string[] = [];
   if (mappedChapter) {
-    summaryParts.push(`Mapped to ${mappedChapter.title}.`);
+    summaryParts.push(`当前已映射到《${mappedChapter.title}》。`);
   } else if (input.sourceDocument.documentKind === "chapter") {
-    summaryParts.push("Chapter mapping is still provisional, so downstream impact is approximate.");
+    summaryParts.push("当前章节映射还不稳定，后续影响分析只能先按近似结果处理。");
   }
   if (affectedCharacterCount > 0) {
-    summaryParts.push(`${affectedCharacterCount} existing characters may need a refresh.`);
+    summaryParts.push(`有 ${affectedCharacterCount} 个既有角色可能需要刷新事实。`);
   }
   if (newCharacterCount > 0) {
-    summaryParts.push(`${newCharacterCount} new character candidates were detected.`);
+    summaryParts.push(`识别到了 ${newCharacterCount} 个新角色候选。`);
   }
   if (relationshipEntries.length > 0) {
-    summaryParts.push(`${relationshipEntries.length} relationship facts may change.`);
+    summaryParts.push(`有 ${relationshipEntries.length} 条关系事实可能发生变化。`);
   }
   if (relatedForeshadows.length > 0) {
-    summaryParts.push(`${relatedForeshadows.length} tracked foreshadows are tied to this chapter.`);
+    summaryParts.push(`有 ${relatedForeshadows.length} 条已跟踪伏笔与当前章节直接相关。`);
   } else if (foreshadowCandidates.length > 0) {
-    summaryParts.push(`${foreshadowCandidates.length} new foreshadow signals were extracted.`);
+    summaryParts.push(`抽取到了 ${foreshadowCandidates.length} 条新的伏笔信号。`);
   }
   if (timelineCandidates.length > 0) {
-    summaryParts.push(`${timelineCandidates.length} timeline markers were detected.`);
+    summaryParts.push(`检测到了 ${timelineCandidates.length} 个时间线标记。`);
   }
   if (downstreamChapters.length > 0) {
-    summaryParts.push(`${downstreamChapters.length} later chapters may need a follow-up check.`);
+    summaryParts.push(`后续 ${downstreamChapters.length} 章建议做一次连贯性复核。`);
   }
 
   if (!summaryParts.length) {
@@ -235,6 +248,7 @@ export function buildReviewBundleImpactSummary(
     downstreamChapterCount: downstreamChapters.length,
     timelineSignalCount: timelineCandidates.length,
     topEntries,
+    recommendedReviewChapters,
   };
 }
 
@@ -358,6 +372,10 @@ function orderChapters(chapters: ChapterCard[], volumes: VolumeOutline[]): Chapt
 
     return left.title.localeCompare(right.title, "zh-CN");
   });
+}
+
+function buildChapterLabel(chapter: ChapterCard): string {
+  return `第 ${chapter.order} 章 / ${chapter.title}`;
 }
 
 function normalizeText(value: string): string {

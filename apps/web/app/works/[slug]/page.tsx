@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+﻿import { notFound } from "next/navigation";
 
 import { NovelWorkbenchService } from "@aifiction/data";
 
@@ -12,6 +12,10 @@ interface WorkDetailPageProps {
   };
   searchParams?: {
     view?: string;
+    focusCharacter?: string;
+    sourceType?: string;
+    traceDocumentId?: string;
+    tracePath?: string;
   };
 }
 
@@ -23,5 +27,14 @@ export default async function WorkDetailPage({ params, searchParams }: WorkDetai
     notFound();
   }
 
-  return <WorkDetailShell snapshot={snapshot} activeView={searchParams?.view} />;
+  return (
+    <WorkDetailShell
+      snapshot={snapshot}
+      activeView={searchParams?.view}
+      graphFocusCharacterId={searchParams?.focusCharacter}
+      graphSourceType={searchParams?.sourceType}
+      reviewTraceDocumentId={searchParams?.traceDocumentId}
+      reviewTracePath={searchParams?.tracePath}
+    />
+  );
 }

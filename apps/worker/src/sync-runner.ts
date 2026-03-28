@@ -118,6 +118,10 @@ function printScanSummary(summary: Awaited<ReturnType<NovelProjectSyncService["s
   console.log(`- Modified: ${summary.modifiedCount}`);
   console.log(`- Missing: ${summary.missingCount}`);
   console.log(`- Unchanged: ${summary.unchangedCount}`);
+  console.log(`- Auto-routed reviews: ${summary.autoRoute.scannedReviewCount}`);
+  console.log(`- Auto-approved: ${summary.autoRoute.approvedReviewCount}`);
+  console.log(`- Remaining review items: ${summary.autoRoute.remainingReviewCount}`);
+  console.log(`- Conflict items: ${summary.autoRoute.conflictReviewCount}`);
 }
 
 async function main() {

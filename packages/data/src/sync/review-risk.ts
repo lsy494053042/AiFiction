@@ -70,13 +70,13 @@ export function assessReviewRisk(input: ReviewRiskInput): ReviewRiskAssessment {
 
   if (input.reviewKind === "summary-validation" && input.severity !== "low") {
     categories.add("summary-low-confidence");
-    reasons.push("Summary preview confidence is below the low-risk threshold.");
+    reasons.push("摘要预览的置信度低于低风险阈值。");
     recommendedActions.add("review-summary-preview");
   }
 
   if (input.reviewKind === "extraction-preview-validation" && input.severity !== "low") {
     categories.add("extraction-low-confidence");
-    reasons.push("Extraction preview confidence is below the low-risk threshold.");
+    reasons.push("抽取预览的置信度低于低风险阈值。");
     recommendedActions.add("review-extraction-preview");
   }
 
@@ -88,12 +88,12 @@ export function assessReviewRisk(input: ReviewRiskInput): ReviewRiskAssessment {
 
   if (input.severity === "high") {
     categories.add("high-severity-review");
-    reasons.push("The review item is marked as high severity.");
+    reasons.push("当前审查项被标记为高风险。");
     recommendedActions.add("inspect-source-text");
   }
 
   for (const hint of reviewHints) {
-    reasons.push(hint);
+    reasons.push(translateReviewHint(hint));
     for (const matcher of hintCategoryMatchers) {
       if (hint.includes(matcher.match)) {
         categories.add(matcher.category);
@@ -144,10 +144,27 @@ function readReviewHints(detailJson: Record<string, unknown>): string[] {
 function readUnsupportedReason(detailJson: Record<string, unknown>): string {
   const value = detailJson.unsupportedReason;
   if (typeof value === "string" && value.trim().length > 0) {
-    return value;
+    return translateReviewHint(value);
   }
 
-  return "Source format is unsupported and needs manual handling.";
+  return "当前源文件格式不受支持，需要先人工转换或补录。";
+}
+
+function translateReviewHint(hint: string): string {
+  switch (hint) {
+    case "No stable character candidates were detected yet.":
+      return "当前还没有检测到稳定的角色候选。";
+    case "No stable character candidate bundle was extracted.":
+      return "当前没有抽取到稳定的角色候选包。";
+    case "No clear relationship signal was extracted from the current text.":
+      return "当前文本里还没有提取到清晰的关系信号。";
+    case "No obvious foreshadow candidate was extracted.":
+      return "当前文本里还没有提取到明显的伏笔候选。";
+    case "No explicit timeline marker was extracted.":
+      return "当前文本里还没有提取到明确的时间线标记。";
+    default:
+      return hint;
+  }
 }
 
 function resolveBlockingLevel(
@@ -193,11 +210,11 @@ function resolveRiskNature(categories: Set<ReviewRiskCategory>): ReviewRiskNatur
 function createAutoApprovalReason(reviewKind: string): string {
   switch (reviewKind) {
     case "summary-validation":
-      return "Low-severity summary preview with no review hints.";
+      return "低风险的摘要预览，且没有额外审查提示。";
     case "extraction-preview-validation":
-      return "Low-severity extraction preview with no review hints.";
+      return "低风险的抽取预览，且没有额外审查提示。";
     default:
-      return "Low-severity review item with no risk signals.";
+      return "低风险审查项，没有额外风险信号。";
   }
 }
 

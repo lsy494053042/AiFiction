@@ -6,6 +6,7 @@ import { type SqliteClient, getSqliteClient } from "../../client";
 import { ensureSqliteV2Bootstrap } from "../../v2/bootstrap";
 import {
   assetUpdatesV2Table,
+  followUpTaskStatesV2Table,
   reviewQueueV2Table,
   sourceRefsV2Table,
   syncRunItemsV2Table,
@@ -56,6 +57,20 @@ export interface SyncSourceRefRecord {
   referenceKind: string;
   locator: string;
   evidenceQuote?: string;
+  updatedAt: string;
+}
+
+export interface SyncFollowUpTaskStateRecord {
+  id: string;
+  projectId: string;
+  chapterId: string;
+  taskKind: string;
+  taskFingerprint: string;
+  taskStatus: string;
+  taskOutcome?: string;
+  outcomeSummary?: string;
+  decisionNote?: string;
+  decidedAt?: string;
   updatedAt: string;
 }
 
@@ -497,6 +512,149 @@ export class SqliteSyncWorkflowRepository {
     const rows = input.limit ? await query.limit(input.limit) : await query;
 
     return rows.map((row) => this.mapSourceRefRow(row));
+  }
+
+  async listFollowUpTaskStates(projectId: string, taskKind?: string): Promise<SyncFollowUpTaskStateRecord[]> {
+    await ensureSqliteV2Bootstrap(this.client);
+
+    const rows = taskKind
+      ? await this.client.db
+          .select()
+          .from(followUpTaskStatesV2Table)
+          .where(
+            and(
+              eq(followUpTaskStatesV2Table.projectId, projectId),
+              eq(followUpTaskStatesV2Table.taskKind, taskKind),
+            ),
+          )
+          .orderBy(desc(followUpTaskStatesV2Table.updatedAt))
+      : await this.client.db
+          .select()
+          .from(followUpTaskStatesV2Table)
+          .where(eq(followUpTaskStatesV2Table.projectId, projectId))
+          .orderBy(desc(followUpTaskStatesV2Table.updatedAt));
+
+    return rows.map((row) => this.mapFollowUpTaskStateRow(row));
+  }
+
+  async getFollowUpTaskState(input: {
+    projectId: string;
+    chapterId: string;
+    taskKind: string;
+  }): Promise<SyncFollowUpTaskStateRecord | null> {
+    await ensureSqliteV2Bootstrap(this.client);
+
+    const rows = await this.client.db
+      .select()
+      .from(followUpTaskStatesV2Table)
+      .where(
+        and(
+          eq(followUpTaskStatesV2Table.projectId, input.projectId),
+          eq(followUpTaskStatesV2Table.chapterId, input.chapterId),
+          eq(followUpTaskStatesV2Table.taskKind, input.taskKind),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    return row ? this.mapFollowUpTaskStateRow(row) : null;
+  }
+
+  async saveFollowUpTaskState(input: {
+    id?: string;
+    projectId: string;
+    chapterId: string;
+    taskKind: string;
+    taskFingerprint: string;
+    taskStatus: string;
+    taskOutcome?: string;
+    outcomeSummary?: string;
+    decisionNote?: string;
+    decidedAt?: string;
+  }): Promise<string> {
+    await ensureSqliteV2Bootstrap(this.client);
+
+    const timestamp = nowIsoString();
+    const [existingRow] = await this.client.db
+      .select({
+        id: followUpTaskStatesV2Table.id,
+        createdAt: followUpTaskStatesV2Table.createdAt,
+        version: followUpTaskStatesV2Table.version,
+      })
+      .from(followUpTaskStatesV2Table)
+      .where(
+        and(
+          eq(followUpTaskStatesV2Table.projectId, input.projectId),
+          eq(followUpTaskStatesV2Table.chapterId, input.chapterId),
+          eq(followUpTaskStatesV2Table.taskKind, input.taskKind),
+        ),
+      )
+      .limit(1);
+
+    const taskStateId = existingRow?.id ?? input.id ?? randomUUID();
+
+    await this.client.db
+      .insert(followUpTaskStatesV2Table)
+      .values({
+        id: taskStateId,
+        projectId: input.projectId,
+        chapterId: input.chapterId,
+        taskKind: input.taskKind,
+        taskFingerprint: input.taskFingerprint,
+        taskStatus: input.taskStatus,
+        taskOutcome: input.taskOutcome ?? null,
+        outcomeSummary: input.outcomeSummary ?? null,
+        decisionNote: input.decisionNote ?? null,
+        decidedAt: input.decidedAt ?? null,
+        ...buildLifecycleValues({
+          existing: existingRow,
+          status: input.taskStatus,
+          timestamp,
+          metaJson: { source: "sync-workflow-repository" },
+          extraJson: {},
+        }),
+      })
+      .onConflictDoUpdate({
+        target: [
+          followUpTaskStatesV2Table.projectId,
+          followUpTaskStatesV2Table.chapterId,
+          followUpTaskStatesV2Table.taskKind,
+        ],
+        set: {
+          taskFingerprint: input.taskFingerprint,
+          taskStatus: input.taskStatus,
+          taskOutcome: input.taskOutcome ?? null,
+          outcomeSummary: input.outcomeSummary ?? null,
+          decisionNote: input.decisionNote ?? null,
+          decidedAt: input.decidedAt ?? null,
+          ...buildLifecycleValues({
+            existing: existingRow,
+            status: input.taskStatus,
+            timestamp,
+            metaJson: { source: "sync-workflow-repository" },
+            extraJson: {},
+          }),
+        },
+      });
+
+    return taskStateId;
+  }
+
+  private mapFollowUpTaskStateRow(
+    row: typeof followUpTaskStatesV2Table.$inferSelect,
+  ): SyncFollowUpTaskStateRecord {
+    return {
+      id: row.id,
+      projectId: row.projectId,
+      chapterId: row.chapterId,
+      taskKind: row.taskKind,
+      taskFingerprint: row.taskFingerprint,
+      taskStatus: row.taskStatus,
+      taskOutcome: row.taskOutcome ?? undefined,
+      outcomeSummary: row.outcomeSummary ?? undefined,
+      decisionNote: row.decisionNote ?? undefined,
+      decidedAt: row.decidedAt ?? undefined,
+      updatedAt: row.updatedAt,
+    };
   }
 
   private mapReviewRow(row: typeof reviewQueueV2Table.$inferSelect): SyncReviewQueueRecord {

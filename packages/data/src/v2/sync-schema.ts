@@ -1,11 +1,14 @@
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 import { type JsonObject, lifecycleColumns } from "../foundation/base-columns";
+import { chaptersV2Table } from "./narrative-schema";
 import { novelProjectsV2Table } from "./project-schema";
 import { artifactVersionsV2Table, artifactsV2Table } from "./runtime-schema";
 
 /**
- * 閺堫剙婀撮弬鍥︽濠ф劘銆冮妴? * 娑撯偓闁劋缍旈崫浣稿讲娴犮儳绮︾€规艾顦跨紒鍕拱閸︽壆娲拌ぐ鏇礉娓氬顩у锝嗘瀮閻╊喖缍嶉妴浣筋啎鐎规氨娲拌ぐ鏇熷灗鐎电厧鍤惄顔肩秿閵? */
+ * Local file sources for a project.
+ * A project can bind multiple sources such as chapters, outlines, and exports.
+ */
 export const fileSourcesV2Table = sqliteTable(
   "file_sources_v2",
   {
@@ -36,7 +39,9 @@ export const fileSourcesV2Table = sqliteTable(
 );
 
 /**
- * 閺夈儲绨弬鍥︽鐞涖劊鈧? * 鐠佹澘缍嶉惄顔肩秿閹殿偅寮块惇瀣煂閻ㄥ嫬鍙挎担鎾存瀮娴犺绱濇禒銉ュ挤鐎瑰啫缍嬮崜宥嗘Ё鐏忓嫬鍩岄崫顏嗩潚娑撴艾濮熺€电钖勯妴? */
+ * Snapshot of documents under a bound file source.
+ * Used to track checksum, mapped scope, and sync state.
+ */
 export const sourceDocumentsV2Table = sqliteTable(
   "source_documents_v2",
   {
@@ -72,7 +77,8 @@ export const sourceDocumentsV2Table = sqliteTable(
 );
 
 /**
- * 閸氬本顒炴潻鎰攽鐞涖劊鈧? * 鐠佹澘缍嶆稉鈧▎锛勬窗瑜版洘澹傞幓蹇斿灗娑撯偓濞嗏€愁杻闁插繐鎮撳銉ф畱妞よ泛鐪扮紒鎾寸亯閵? */
+ * A single scan / sync run over a file source.
+ */
 export const syncRunsV2Table = sqliteTable(
   "sync_runs_v2",
   {
@@ -101,7 +107,8 @@ export const syncRunsV2Table = sqliteTable(
 );
 
 /**
- * 閸氬本顒炴潻鎰攽妞ょ銆冮妴? * 閻劋绨仦鏇炵磻閺屾劖顐奸崥灞绢劄闁插本鐦℃稉顏呮瀮娴犲墎娈戞径鍕倞缂佹挻鐏夐敍灞肩┒娴滃孩甯撻柨娆庣瑢閸ョ偞鏂侀妴? */
+ * Individual processing items inside a sync run.
+ */
 export const syncRunItemsV2Table = sqliteTable(
   "sync_run_items_v2",
   {
@@ -133,7 +140,8 @@ export const syncRunItemsV2Table = sqliteTable(
 );
 
 /**
- * 鐠у嫪楠囬弴瀛樻煀瀵ら缚顔呯悰銊ｂ偓? * 鏉╂瑥鐪伴幍鎸庡复閼奉亜濮╅幎钘夊絿閸氬海娈戝楦款唴閺囧瓨鏌婄紒鎾寸亯閿涘苯鎮楃紒顓犳暠閼奉亜濮╂惔鏃傛暏閹存牕顓搁弻銉╂Е閸掓绉风拹骞库偓? */
+ * Proposed structured asset updates extracted from changed content.
+ */
 export const assetUpdatesV2Table = sqliteTable(
   "asset_updates_v2",
   {
@@ -167,7 +175,8 @@ export const assetUpdatesV2Table = sqliteTable(
 );
 
 /**
- * 鐎光剝鐓￠梼鐔峰灙鐞涖劊鈧? * 娴ｅ海鐤嗘穱鈥冲缂佹挻鐏夐妴浣虹波閺嬪嫬鍟跨粣浣瑰灗妤傛﹢顥撻梽鈺傛纯閺備即鍏樻潻娑樺弳鏉╂瑩鍣风粵澶婄窡婢跺嫮鎮婇妴? */
+ * Review queue items waiting for a decision.
+ */
 export const reviewQueueV2Table = sqliteTable(
   "review_queue_v2",
   {
@@ -188,7 +197,6 @@ export const reviewQueueV2Table = sqliteTable(
     sourceId: text("source_id"),
     reviewKind: text("review_kind").notNull(),
     severity: text("severity").notNull(),
-
     summary: text("summary").notNull(),
     detailJson: text("detail_json", { mode: "json" }).$type<JsonObject>().notNull(),
     decisionNote: text("decision_note"),
@@ -204,7 +212,43 @@ export const reviewQueueV2Table = sqliteTable(
 );
 
 /**
- * 閺夈儲绨鏇犳暏鐞涖劊鈧? * 閹跺﹦绮ㄩ弸鍕娴滃鐤勬稉搴″斧婵鐝烽懞鍌樷偓浣稿斧婵楠囬悧鈺冨閺堫剙缂撶粩瀣▔瀵繗鎷峰┃顖氬彠缁眹鈧? */
+ * Persisted chapter-level follow-up task state.
+ * Currently used for formal review tasks and designed to extend to more task kinds later.
+ */
+export const followUpTaskStatesV2Table = sqliteTable(
+  "follow_up_task_states_v2",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => novelProjectsV2Table.id, { onDelete: "cascade" }),
+    chapterId: text("chapter_id")
+      .notNull()
+      .references(() => chaptersV2Table.id, { onDelete: "cascade" }),
+    taskKind: text("task_kind").notNull(),
+    taskFingerprint: text("task_fingerprint").notNull(),
+    taskStatus: text("task_status").notNull(),
+    taskOutcome: text("task_outcome"),
+    outcomeSummary: text("outcome_summary"),
+    decisionNote: text("decision_note"),
+    decidedAt: text("decided_at"),
+    ...lifecycleColumns(),
+  },
+  (table) => ({
+    projectIndex: index("follow_up_task_states_v2_project_id_idx").on(table.projectId),
+    chapterIndex: index("follow_up_task_states_v2_chapter_id_idx").on(table.chapterId),
+    statusIndex: index("follow_up_task_states_v2_status_idx").on(table.taskStatus),
+    uniqueTaskIndex: uniqueIndex("follow_up_task_states_v2_project_chapter_kind_unique").on(
+      table.projectId,
+      table.chapterId,
+      table.taskKind,
+    ),
+  }),
+);
+
+/**
+ * References from structured facts back to source documents and artifacts.
+ */
 export const sourceRefsV2Table = sqliteTable(
   "source_refs_v2",
   {

@@ -42,10 +42,10 @@ async function decideReviewIds(input: {
   }
 }
 
-/**
- * 绑定作品目录源。
- * 绑定完成后会立即执行一次扫描，确保工作台能立刻看到最新状态。
- */
+function buildWorkViewHref(workSlug: string, view?: string): string {
+  return view && view !== "overview" ? `/works/${workSlug}?view=${view}` : `/works/${workSlug}`;
+}
+
 export async function bindWorkSourceAction(formData: FormData) {
   const workSlug = readRequiredText(formData, "workSlug", "作品 slug");
 
@@ -67,10 +67,6 @@ export async function bindWorkSourceAction(formData: FormData) {
   redirect(`/works/${workSlug}`);
 }
 
-/**
- * 重新扫描已绑定目录源。
- * 用于在本地章节新增或修改后手动触发一次同步。
- */
 export async function rescanWorkSourceAction(formData: FormData) {
   const workSlug = readRequiredText(formData, "workSlug", "作品 slug");
   const fileSourceId = readRequiredText(formData, "fileSourceId", "目录源 ID");
@@ -82,14 +78,10 @@ export async function rescanWorkSourceAction(formData: FormData) {
   redirect(`/works/${workSlug}`);
 }
 
-/**
- * 处理单条审查项。
- * 主要用于对单个 review item 执行通过或驳回。
- */
 export async function decideReviewAction(formData: FormData) {
   const workSlug = readRequiredText(formData, "workSlug", "作品 slug");
   const reviewId = readRequiredText(formData, "reviewId", "审查项 ID");
-  const decision = readRequiredText(formData, "decision", "处理决定");
+  const decision = readRequiredText(formData, "decision", "审查决定");
 
   if (decision !== "approved" && decision !== "rejected") {
     throw new Error("不支持的审查决定。");
@@ -106,17 +98,13 @@ export async function decideReviewAction(formData: FormData) {
   redirect(`/works/${workSlug}`);
 }
 
-/**
- * 处理整包变更。
- * 用于对一个变更包里的所有 review item 批量执行通过或驳回。
- */
 export async function decideReviewBundleAction(formData: FormData) {
   const workSlug = readRequiredText(formData, "workSlug", "作品 slug");
-  const decision = readRequiredText(formData, "decision", "处理决定");
+  const decision = readRequiredText(formData, "decision", "审查决定");
   const reviewIds = readReviewIdList(formData);
 
   if (!reviewIds.length) {
-    throw new Error("没有提供审查项 ID。");
+    throw new Error("没有收到可处理的审查项 ID。");
   }
   if (decision !== "approved" && decision !== "rejected") {
     throw new Error("不支持的审查决定。");
@@ -133,24 +121,73 @@ export async function decideReviewBundleAction(formData: FormData) {
   redirect(`/works/${workSlug}`);
 }
 
-/**
- * 自动通过低风险变更包。
- * 这里仍然由服务端做最终校验，避免前端误传导致越权自动通过。
- */
+export async function autoRouteProjectReviewsAction(formData: FormData) {
+  const workSlug = readRequiredText(formData, "workSlug", "作品 slug");
+  const workId = readRequiredText(formData, "workId", "作品 ID");
+
+  await reviewQueueService.autoRouteProjectReviewItems({
+    projectId: workId,
+    decisionNote: readOptionalText(formData, "decisionNote") ?? "系统已自动分流当前待处理项，并自动通过低风险部分。",
+  });
+
+  revalidatePath("/");
+  revalidatePath(`/works/${workSlug}`);
+  redirect(`/works/${workSlug}?view=reviews`);
+}
+
 export async function autoApproveLowRiskBundlesAction(formData: FormData) {
   const workSlug = readRequiredText(formData, "workSlug", "作品 slug");
   const reviewIds = readReviewIdList(formData);
 
   if (!reviewIds.length) {
-    throw new Error("没有提供低风险审查项 ID。");
+    throw new Error("没有收到可自动通过的审查项 ID。");
   }
 
   await reviewQueueService.autoApproveReviewItems({
     reviewIds,
-    decisionNote: readOptionalText(formData, "decisionNote") ?? "系统自动通过低风险变更包。",
+    decisionNote: readOptionalText(formData, "decisionNote") ?? "系统已自动通过低风险变更包。",
   });
 
   revalidatePath("/");
   revalidatePath(`/works/${workSlug}`);
   redirect(`/works/${workSlug}`);
 }
+export async function updateFollowUpTaskAction(formData: FormData) {
+  const workSlug = readRequiredText(formData, "workSlug", "work slug");
+  const workId = readRequiredText(formData, "workId", "work ID");
+  const chapterId = readRequiredText(formData, "chapterId", "chapter ID");
+  const taskKind = readRequiredText(formData, "taskKind", "task kind");
+  const taskFingerprint = readRequiredText(formData, "taskFingerprint", "task fingerprint");
+  const taskResult = readOptionalText(formData, "taskResult");
+  const explicitTaskStatus = readOptionalText(formData, "taskStatus");
+  const explicitTaskOutcome = readOptionalText(formData, "taskOutcome");
+  const returnView = readOptionalText(formData, "returnView") ?? "overview";
+
+  if (taskKind !== "formal-review") {
+    throw new Error("Unsupported follow-up task kind.");
+  }
+
+  const [resultStatus, resultOutcome] = taskResult ? taskResult.split(":", 2) : [];
+  const taskStatus = explicitTaskStatus ?? resultStatus ?? "pending";
+  const taskOutcome = explicitTaskOutcome ?? resultOutcome ?? undefined;
+
+  if (!["pending", "in_review", "completed", "dismissed"].includes(taskStatus)) {
+    throw new Error("Unsupported follow-up task status.");
+  }
+
+  await reviewQueueService.updateFollowUpTaskState({
+    projectId: workId,
+    chapterId,
+    taskKind: "formal-review",
+    taskFingerprint,
+    taskStatus: taskStatus as "pending" | "in_review" | "completed" | "dismissed",
+    taskOutcome: taskOutcome as "consistent" | "needs-revision" | "needs-rescan" | "deferred" | undefined,
+    outcomeSummary: readOptionalText(formData, "outcomeSummary"),
+    decisionNote: readOptionalText(formData, "decisionNote"),
+  });
+
+  revalidatePath("/");
+  revalidatePath(`/works/${workSlug}`);
+  redirect(buildWorkViewHref(workSlug, returnView));
+}
+

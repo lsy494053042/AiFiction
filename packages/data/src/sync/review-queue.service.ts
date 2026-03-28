@@ -32,8 +32,28 @@ export interface AutoApproveReviewItemsResult {
   skippedReviewIds: string[];
 }
 
-/**
- * 瀹℃煡闃熷垪鏈嶅姟銆? * 璐熻矗鎶娾€滈€氳繃 / 椹冲洖鈥濆姩浣滅湡姝ｅ啓鍥炲鏌ラ」銆佸缓璁洿鏂板拰婧愭枃妗ｇ姸鎬併€? */
+export interface AutoRouteProjectReviewItemsResult {
+  scannedReviewCount: number;
+  approvedReviewIds: string[];
+  reviewReviewIds: string[];
+  conflictReviewIds: string[];
+  informationGapReviewIds: string[];
+  confidenceReviewIds: string[];
+  formatBlockerReviewIds: string[];
+  factualConflictReviewIds: string[];
+}
+
+export interface UpdateFollowUpTaskStateInput {
+  projectId: string;
+  chapterId: string;
+  taskKind: "formal-review";
+  taskFingerprint: string;
+  taskStatus: "pending" | "in_review" | "completed" | "dismissed";
+  taskOutcome?: "consistent" | "needs-revision" | "needs-rescan" | "deferred";
+  outcomeSummary?: string;
+  decisionNote?: string;
+}
+
 export class SyncReviewQueueService {
   private readonly approvedExtractionWritebackService: ApprovedExtractionWritebackService;
   private readonly syncSourceRepository: SqliteSyncSourceRepository;
@@ -83,15 +103,125 @@ export class SyncReviewQueueService {
     };
   }
 
+  async autoRouteProjectReviewItems(input: {
+    projectId: string;
+    decisionNote?: string;
+    sourceDocumentIds?: string[];
+    syncRunId?: string;
+  }): Promise<AutoRouteProjectReviewItemsResult> {
+    await ensureSqliteV2Bootstrap(this.client);
+
+    const sourceDocumentIdSet = input.sourceDocumentIds?.length
+      ? new Set(input.sourceDocumentIds.filter((value) => value.trim().length > 0))
+      : undefined;
+
+    const pendingReviews = (await this.syncWorkflowRepository.listReviewQueue(input.projectId, "pending"))
+      .filter((review) => !sourceDocumentIdSet || (review.sourceDocumentId ? sourceDocumentIdSet.has(review.sourceDocumentId) : false))
+      .filter((review) => !input.syncRunId || review.syncRunId === input.syncRunId);
+    const approvedReviewIds: string[] = [];
+    const reviewReviewIds: string[] = [];
+    const conflictReviewIds: string[] = [];
+    const informationGapReviewIds: string[] = [];
+    const confidenceReviewIds: string[] = [];
+    const formatBlockerReviewIds: string[] = [];
+    const factualConflictReviewIds: string[] = [];
+
+    for (const review of pendingReviews) {
+      const riskAssessment = assessReviewRisk({
+        reviewKind: review.reviewKind,
+        severity: review.severity,
+        detailJson: review.detailJson,
+      });
+
+      if (riskAssessment.isAutoApprovable) {
+        await this.decideReviewItem({
+          reviewId: review.id,
+          decision: "approved",
+          decisionNote: input.decisionNote ?? "系统已在自动分流阶段通过低风险审查项。",
+        });
+        approvedReviewIds.push(review.id);
+        continue;
+      }
+
+      if (riskAssessment.blockingLevel === "conflict") {
+        conflictReviewIds.push(review.id);
+      } else {
+        reviewReviewIds.push(review.id);
+      }
+
+      switch (riskAssessment.nature) {
+        case "information-gap":
+          informationGapReviewIds.push(review.id);
+          break;
+        case "confidence-review":
+          confidenceReviewIds.push(review.id);
+          break;
+        case "format-blocker":
+          formatBlockerReviewIds.push(review.id);
+          break;
+        case "factual-conflict":
+          factualConflictReviewIds.push(review.id);
+          break;
+        default:
+          break;
+      }
+    }
+
+    return {
+      scannedReviewCount: pendingReviews.length,
+      approvedReviewIds,
+      reviewReviewIds,
+      conflictReviewIds,
+      informationGapReviewIds,
+      confidenceReviewIds,
+      formatBlockerReviewIds,
+      factualConflictReviewIds,
+    };
+  }
+
+  async updateFollowUpTaskState(input: UpdateFollowUpTaskStateInput) {
+    await ensureSqliteV2Bootstrap(this.client);
+
+    const decidedAt = input.taskStatus === "pending" ? undefined : new Date().toISOString();
+    const decisionNote = input.decisionNote?.trim() || undefined;
+    const outcomeSummary = input.outcomeSummary?.trim() || undefined;
+    const allowedOutcomes = ["consistent", "needs-revision", "needs-rescan", "deferred"] as const;
+    const taskOutcome = input.taskStatus === "completed" || input.taskStatus === "dismissed"
+      ? input.taskOutcome
+      : undefined;
+
+    if (taskOutcome && !allowedOutcomes.includes(taskOutcome)) {
+      throw new Error("不支持的复核结果。");
+    }
+
+    await this.syncWorkflowRepository.saveFollowUpTaskState({
+      projectId: input.projectId,
+      chapterId: input.chapterId,
+      taskKind: input.taskKind,
+      taskFingerprint: input.taskFingerprint,
+      taskStatus: input.taskStatus,
+      taskOutcome,
+      outcomeSummary,
+      decisionNote,
+      decidedAt,
+    });
+
+    return this.syncWorkflowRepository.getFollowUpTaskState({
+      projectId: input.projectId,
+      chapterId: input.chapterId,
+      taskKind: input.taskKind,
+    });
+  }
+
   async decideReviewItem(input: DecideReviewItemInput): Promise<DecideReviewItemResult> {
     await ensureSqliteV2Bootstrap(this.client);
 
     const review = await this.syncWorkflowRepository.getReviewItemById(input.reviewId);
     if (!review) {
-      throw new Error("Review item was not found.");
+      throw new Error("未找到对应的审查项。");
     }
     if (review.status !== "pending") {
-      throw new Error("Only pending review items can be decided.");
+      throw new Error("只有待处理状态的审查项才能做决定。");
     }
 
     const decidedAt = new Date().toISOString();
@@ -145,7 +275,7 @@ export class SyncReviewQueueService {
 
     const updatedReview = await this.syncWorkflowRepository.getReviewItemById(review.id);
     if (!updatedReview) {
-      throw new Error("Review item was updated but could not be reloaded.");
+      throw new Error("审查项已更新，但重新加载失败。");
     }
 
     const sourceDocumentSyncStatus = review.sourceDocumentId
@@ -159,8 +289,6 @@ export class SyncReviewQueueService {
     };
   }
 
-  /**
-   * 鏍规嵁鍚屼竴婧愭枃妗ｄ笅鐨勫鏌ョ粨鏋滐紝鍥炲啓婧愭枃妗ｅ悓姝ョ姸鎬併€?   * 瑙勫垯寰堢畝鍗曪細鍙杩樻湁 pending 灏变繚鎸?review_pending锛涙湁 rejected 灏辨爣璁?review_rejected锛涘惁鍒欒涓?synced銆?   */
   private async syncSourceDocumentStatus(projectId: string, sourceDocumentId: string): Promise<string | undefined> {
     const sourceDocument = await this.findSourceDocument(projectId, sourceDocumentId);
     if (!sourceDocument) {

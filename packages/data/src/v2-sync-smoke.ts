@@ -130,7 +130,9 @@ async function main() {
   console.log(`[AiFiction Data] SQLite path: ${databasePath}`);
   console.log(`[AiFiction Data] Sync file sources: ${fileSources.length}`);
   console.log(`[AiFiction Data] Initial scan => scanned=${firstScan.scannedCount}, changed=${firstScan.changedCount}, created=${firstScan.createdCount}`);
+  console.log(`[AiFiction Data] Initial auto route => scanned=${firstScan.autoRoute.scannedReviewCount}, approved=${firstScan.autoRoute.approvedReviewCount}, remaining=${firstScan.autoRoute.remainingReviewCount}`);
   console.log(`[AiFiction Data] Modified scan => scanned=${secondScan.scannedCount}, changed=${secondScan.changedCount}, modified=${secondScan.modifiedCount}`);
+  console.log(`[AiFiction Data] Modified auto route => scanned=${secondScan.autoRoute.scannedReviewCount}, approved=${secondScan.autoRoute.approvedReviewCount}, remaining=${secondScan.autoRoute.remainingReviewCount}`);
   console.log(`[AiFiction Data] Source documents with current artifact: ${summarizedDocuments}`);
   console.log(`[AiFiction Data] Asset update count: ${assetUpdates.length}`);
   console.log(`[AiFiction Data] Asset update types: ${JSON.stringify(updateTypeCounts)}`);

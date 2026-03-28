@@ -28,6 +28,7 @@ import {
 import {
   assetUpdatesV2Table,
   fileSourcesV2Table,
+  followUpTaskStatesV2Table,
   reviewQueueV2Table,
   sourceDocumentsV2Table,
   sourceRefsV2Table,
@@ -62,6 +63,7 @@ export {
   syncRunsV2Table,
   syncRunItemsV2Table,
   assetUpdatesV2Table,
+  followUpTaskStatesV2Table,
   reviewQueueV2Table,
   sourceRefsV2Table,
 };
@@ -97,6 +99,7 @@ export const v2Schema = {
   syncRunsV2Table,
   syncRunItemsV2Table,
   assetUpdatesV2Table,
+  followUpTaskStatesV2Table,
   reviewQueueV2Table,
   sourceRefsV2Table,
 };

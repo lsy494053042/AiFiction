@@ -124,3 +124,48 @@
 - 仓库文本文件统一使用 UTF-8 与 LF，编辑器侧通过 `.editorconfig` 和 `.vscode/settings.json` 固定编码。
 - 对中文内容的批量更新，优先使用显式 UTF-8 写入方式，不依赖 PowerShell 默认输出编码。
 - `scripts/encoding-check.mjs` 负责在提交前发现明显的问号污染、替换字符和常见乱码信号。
+
+### 自动分流（2026-03-28）
+- SyncReviewQueueService 已新增项目级自动分流入口，用于批量扫描 pending review，并自动通过低风险项。
+- 工作台读模型会同时输出自动接收、需要复核、存在冲突 3 类变更包计数。
+
+## 处理策略分层（2026-03-28）
+- WorkbenchActionPlan 现在除了 lane，还会显式给出 strategy。
+- 当前策略层包括：自动写回、先核对证据、等待更多上下文、先处理文件格式、先解决事实冲突。
+- 读模型会把待处理包优先分成自动接收、复核、冲突三条路径，再决定页面展示和后续动作。
+
+## 影响分析输出（2026-03-28）
+- WorkbenchImpactSummary 现在除了 topEntries，还会输出 recommendedReviewChapters。
+- 项目级读模型会把这些章节聚合成 attentionChapters，供待处理页和详情页直接消费。
+- 这一步还没有进入独立数据库表，当前仍然是读模型聚合结果，优先用于工作台决策和后续复核提示。
+
+## 后续章节动作分流（2026-03-28）
+- `attentionChapters` 不再只输出总量，而是增加 `followUpMode`、`priority`、`recommendedAction`。
+- 当前分流规则是：冲突包、事实冲突、多次重复命中的后续章节进入 `formal-review`；其余进入 `watch`。
+- 这一层仍然是读模型增强，没有新增主表，也没有改动 V2 事实层结构。
+
+## followUpQueue（2026-03-28）
+- 工作台读模型在 attentionChapters 之上继续提供项目级 follow-up 聚合，用于突出正式复核章节。
+- 这一层仍然是读模型增强，没有新增表，也没有改动 V2 持久化结构。
+
+## formalReviewTasks（2026-03-28）
+- followUpQueue 之上继续提供 formalReviewTasks，用于承接章节级正式复核任务。
+- 这仍然属于读模型增强，数据库结构未变。
+
+## 正式复核任务状态持久化（2026-03-28）
+- 新增 `follow_up_task_states_v2`，按 `(projectId, chapterId, taskKind)` 唯一约束存储后续任务状态。
+- 这张表不复制整个 follow-up 任务载荷，只保存任务指纹、任务状态和处理备注，仍然由 workbench 读模型实时派生任务内容。
+- 读模型合并逻辑会对比 task fingerprint：指纹未变且状态为 `completed` / `dismissed` 时，任务不再出现在活跃队列中；指纹变更后自动重新开启。
+
+## 关系图谱视图（2026-03-28）
+- Web 详情页现在有独立 `graph` 视图，读模型仍然直接复用 `WorkbenchProjectSnapshot.graph` 和 `recentSourceRefs`。
+- 这一版暂不新增新的图谱存储表，仍然以现有结构化关系事实和来源引用作为真相源。
+
+- 关系图谱视图已接入 URL 驱动的角色聚焦和来源类型筛选，便于后续继续扩展可点击来源引用。
+- 图谱视图与待处理视图已通过 sourceDocumentId/sourcePath 打通来源追踪链，支持按来源回看同源变更包。
+- follow_up_task_states_v2 已补充任务结果字段，用于记录 formal-review 的处理结果与结果摘要。
+
+## 最新设计决策（2026-03-28 / 自动维护链闭环）
+- 自动分流只作用于本次 sync run 内新生成的审查项，避免把历史 pending review 一起卷入。
+- 低风险 review item 会自动调用既有 decideReviewItem -> writeback 链，不再停留在纯预览层。
+- 同步 run item 会根据 source document 的最新 syncStatus 回写为 auto_applied / review_pending / review_rejected，便于后续观察。
