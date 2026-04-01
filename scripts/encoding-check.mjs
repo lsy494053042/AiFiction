@@ -1,4 +1,4 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -6,9 +6,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
 const selfRelativePath = path.relative(repoRoot, __filename).replace(/\\/g, "/");
-const skipDirs = new Set([".git", "node_modules", ".next", "dist", "coverage", ".turbo", "storage"]);
+const skipDirs = new Set([".git", "node_modules", ".next", "dist", "coverage", ".turbo"]);
 const textExtensions = new Set([".md", ".ts", ".tsx", ".js", ".mjs", ".json", ".yml", ".yaml", ".css"]);
-const suspiciousFragments = ["锘", "闃舵", "鎬昏", "褰撳墠", "鍙樻洿", "鐩綍", "寰呭鐞"];
+const suspiciousFragments = ["锟", "閿", "闂", "瑜", "閸", "閻", "瀵"];
 
 function walk(dir, results = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -37,7 +37,7 @@ for (const filePath of walk(repoRoot)) {
     if (/\?{3,}/.test(line)) {
       findings.push({ file: relativePath, line: index + 1, reason: "contains repeated question marks" });
     }
-    if (line.includes("�")) {
+    if (line.includes("锟") || line.includes("�")) {
       findings.push({ file: relativePath, line: index + 1, reason: "contains replacement character" });
     }
     for (const fragment of suspiciousFragments) {

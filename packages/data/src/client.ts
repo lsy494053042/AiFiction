@@ -1,4 +1,4 @@
-﻿import fs from "node:fs";
+import fs from "node:fs";
 import path from "node:path";
 
 import { createClient, type Client } from "@libsql/client";
@@ -21,6 +21,11 @@ export interface SqliteClient {
 
 let cachedClient: SqliteClient | null = null;
 
+function readJsonFile(filePath: string): unknown {
+  const raw = fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, "");
+  return JSON.parse(raw);
+}
+
 function isWorkspaceRoot(candidate: string): boolean {
   const packageJsonPath = path.join(candidate, "package.json");
   if (!fs.existsSync(packageJsonPath)) {
@@ -28,7 +33,7 @@ function isWorkspaceRoot(candidate: string): boolean {
   }
 
   try {
-    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as {
+    const packageJson = readJsonFile(packageJsonPath) as {
       workspaces?: string[];
     };
     return Array.isArray(packageJson.workspaces);
@@ -37,11 +42,7 @@ function isWorkspaceRoot(candidate: string): boolean {
   }
 }
 
-/**
- * 从当前执行目录向上查找 monorepo 根目录。
- * 这样无论命令从根目录还是 workspace 目录触发，都能定位到同一个数据库文件。
- */
-export function resolveWorkspaceRoot(startDirectory = process.cwd()): string {
+function findWorkspaceRootFrom(startDirectory: string): string | null {
   let currentDirectory = path.resolve(startDirectory);
 
   while (true) {
@@ -51,11 +52,35 @@ export function resolveWorkspaceRoot(startDirectory = process.cwd()): string {
 
     const parentDirectory = path.dirname(currentDirectory);
     if (parentDirectory === currentDirectory) {
-      throw new Error("Unable to locate the AiFiction workspace root.");
+      return null;
     }
 
     currentDirectory = parentDirectory;
   }
+}
+
+/**
+ * 从当前执行目录向上查找 monorepo 根目录。
+ * 这样无论命令从根目录还是 workspace 目录触发，都能定位到同一个数据库文件。
+ * 同时优先兼容 npm workspace 下的 INIT_CWD 和显式工作区根目录环境变量。
+ */
+export function resolveWorkspaceRoot(startDirectory = process.cwd()): string {
+  const candidates = [
+    process.env.AIFICTION_WORKSPACE_ROOT,
+    process.env.INIT_CWD,
+    startDirectory,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => path.resolve(value));
+
+  for (const candidate of candidates) {
+    const resolved = findWorkspaceRootFrom(candidate);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  throw new Error("Unable to locate the AiFiction workspace root.");
 }
 
 /**

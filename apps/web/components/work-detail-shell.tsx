@@ -1,667 +1,398 @@
-import type { ReactNode } from "react";
-import Link from "next/link";
+﻿import Link from "next/link";
 
 import type {
-  WorkbenchAttentionChapterSummary,
+  WorkProtocolSummary,
+  WorkbenchDocumentWorkspace,
   WorkbenchProjectSnapshot,
   WorkbenchReviewBundleSummary,
-  WorkbenchReviewStats,
 } from "@aifiction/data";
 
-import { RelationshipGraphPanel } from "./relationship-graph-panel";
-import { WorkManualPanel } from "../lib/work-manual-panel";
-import { updateFollowUpTaskAction } from "../lib/sync-actions";
-import { WorkSyncPanel } from "../lib/work-sync-panel";
+import styles from "./work-detail-shell.module.css";
 
 interface WorkDetailShellProps {
   snapshot: WorkbenchProjectSnapshot;
+  protocolSummary: WorkProtocolSummary | null;
+  chapterWorkspace: WorkbenchDocumentWorkspace | null;
+  outlineWorkspace: WorkbenchDocumentWorkspace | null;
   activeView?: string;
-  graphFocusCharacterId?: string;
-  graphSourceType?: string;
-  reviewTraceDocumentId?: string;
-  reviewTracePath?: string;
+  selectedDocumentKey?: string;
 }
 
-type WorkDetailView = "overview" | "reviews" | "story" | "graph" | "manual";
+type RouteView = "overview" | "manuscript" | "outline" | "characters" | "settings" | "issues";
+type UiView = "overview" | "workspace" | "characters" | "issues";
 
-const detailViewOrder: WorkDetailView[] = ["overview", "reviews", "story", "graph", "manual"];
-const detailViewLabelMap: Record<WorkDetailView, string> = {
-  overview: "\u603b\u89c8",
-  reviews: "\u5f85\u5904\u7406",
-  story: "\u5267\u60c5\u8d44\u4ea7",
-  graph: "\u5173\u7cfb\u56fe\u8c31",
-  manual: "\u9ad8\u7ea7\u7ef4\u62a4",
-};
-const detailViewCopyMap: Record<WorkDetailView, string> = {
-  overview: "\u5148\u770b\u540c\u6b65\u72b6\u6001\u3001\u5f53\u524d\u8d44\u4ea7\u548c\u4e0b\u4e00\u6b65\u5efa\u8bae\uff0c\u518d\u51b3\u5b9a\u662f\u5426\u8fdb\u5165\u66f4\u6df1\u7684\u7ef4\u62a4\u9875\u9762\u3002",
-  reviews: "\u8fd9\u91cc\u53ea\u5904\u7406\u4ecd\u7136\u9700\u8981\u4f60\u5224\u65ad\u7684\u53d8\u66f4\u5305\u3002\u4f4e\u98ce\u9669\u9879\u5e94\u8be5\u5c3d\u91cf\u6279\u91cf\u6e05\u6389\u3002",
-  story: "\u67e5\u770b\u5f53\u524d\u5206\u5377\u3001\u7ae0\u8282\u3001\u89d2\u8272\u548c\u7ed3\u6784\u5316\u5267\u60c5\u8d44\u4ea7\uff0c\u786e\u8ba4\u5b83\u4eec\u4ecd\u7136\u8d34\u5408\u6b63\u6587\u3002",
-  graph: "\u628a\u89d2\u8272\u7f51\u7edc\u3001\u5173\u7cfb\u4e8b\u5b9e\u548c\u6765\u6e90\u8bc1\u636e\u5355\u72ec\u62c9\u51fa\u6765\u770b\uff0c\u907f\u514d\u5b83\u4eec\u7ee7\u7eed\u6324\u5728\u957f\u9875\u9762\u91cc\u3002",
-  manual: "\u624b\u5de5\u5165\u53e3\u53ea\u4f5c\u4e3a\u515c\u5e95\u3002\u53ea\u6709\u81ea\u52a8\u7ef4\u62a4\u660e\u663e\u4e0d\u5bf9\u65f6\uff0c\u624d\u5efa\u8bae\u8fdb\u5165\u8fd9\u91cc\u3002",
-};
-const blockingLevelLabelMap: Record<string, string> = {
-  none: "信息提醒",
-  review: "需要复核",
-  conflict: "存在冲突",
-};
-const riskNatureLabelMap: Record<string, string> = {
-  none: "无明显风险",
-  "information-gap": "信息缺口",
-  "confidence-review": "置信度复核",
-  "format-blocker": "格式阻塞",
-  "factual-conflict": "事实冲突",
-};
-const formalReviewOutcomeLabelMap: Record<string, string> = {
-  consistent: "\u590d\u6838\u901a\u8fc7",
-  "needs-revision": "\u9700\u8981\u4fee\u8ba2",
-  "needs-rescan": "\u9700\u8981\u91cd\u8dd1\u62bd\u53d6",
-  deferred: "\u672c\u8f6e\u8df3\u8fc7",
+type SettingSection = {
+  id: string;
+  label: string;
+  blocks: Array<{ title: string; text?: string; list?: string[] }>;
 };
 
-function normalizeDetailView(value?: string): WorkDetailView {
-  if (value && detailViewOrder.includes(value as WorkDetailView)) {
-    return value as WorkDetailView;
+type ContentItem = {
+  key: string;
+  title: string;
+  meta: string;
+  href: string;
+};
+
+const stageLabels: Record<string, string> = {
+  planning: "规划中",
+  drafting: "写作中",
+  revising: "修订中",
+  serializing: "连载中",
+  completed: "已完结",
+  archived: "已归档",
+};
+
+const issueToneLabels: Record<string, string> = {
+  "factual-conflict": "前后写法对不上",
+  "information-gap": "这里的信息还不够",
+  "format-blocker": "文档还需要整理",
+  "confidence-review": "系统现在还拿不准",
+  none: "目前没有明显问题",
+};
+
+const actionLabels: Record<string, string> = {
+  "review-extraction-preview": "先核对系统抓到的重点是不是对的",
+  "inspect-source-text": "先回看原文，看是不是写得太含糊",
+  "retry-after-more-content": "可以先继续往后写，等信息更完整再判断",
+  "review-summary-preview": "先看系统整理出来的摘要再决定",
+  "confirm-relationship-change": "先把人物关系变化拍板下来",
+  "confirm-timeline-change": "先确认时间顺序有没有写反",
+};
+
+function getRouteView(value?: string): RouteView {
+  if (value === "overview" || value === "outline" || value === "characters" || value === "settings" || value === "issues") {
+    return value;
   }
-  return "overview";
+  return "manuscript";
 }
 
-interface GraphViewFilters {
-  focusCharacterId?: string;
-  sourceType?: string;
+function getUiView(view: RouteView): UiView {
+  if (view === "overview") return "overview";
+  if (view === "characters") return "characters";
+  if (view === "issues") return "issues";
+  return "workspace";
 }
 
-function getViewHref(workSlug: string, view: WorkDetailView, graphFilters?: GraphViewFilters): string {
-  const encodedSlug = encodeURIComponent(workSlug);
-  const params = new URLSearchParams();
-
-  if (view !== "overview") {
-    params.set("view", view);
-  }
-
-  if (view === "graph") {
-    if (graphFilters?.focusCharacterId) {
-      params.set("focusCharacter", graphFilters.focusCharacterId);
-    }
-
-    if (graphFilters?.sourceType) {
-      params.set("sourceType", graphFilters.sourceType);
-    }
-  }
-
-  const query = params.toString();
-  return query ? `/works/${encodedSlug}?${query}` : `/works/${encodedSlug}`;
+function getViewHref(workSlug: string, view: RouteView, document?: string): string {
+  const slug = encodeURIComponent(workSlug);
+  return document ? `/works/${slug}/${view}?document=${encodeURIComponent(document)}` : `/works/${slug}/${view}`;
 }
 
-function getFocusState(
-  workSlug: string,
-  fileSourceCount: number,
-  reviewStats: WorkbenchReviewStats,
-  formalReviewChapterCount: number,
-) {
-  if (reviewStats.conflictBundleCount > 0) {
-    return {
-      title: "先处理冲突包",
-      description: `当前还有 ${reviewStats.conflictBundleCount} 个冲突包，它们会直接影响既有事实层，优先级最高。`,
-      href: getViewHref(workSlug, "reviews"),
-      cta: "打开冲突处理",
-    };
-  }
-
-  if (reviewStats.reviewBundleCount > 0) {
-    return {
-      title: "先清理需要复核的变更包",
-      description: `当前还有 ${reviewStats.reviewBundleCount} 个变更包需要你快速过一遍证据和预览。`,
-      href: getViewHref(workSlug, "reviews"),
-      cta: "打开待处理",
-    };
-  }
-
-  if (reviewStats.autoApprovableBundleCount > 0) {
-    return {
-      title: "先清理可自动接收的低风险包",
-      description: `当前有 ${reviewStats.autoApprovableBundleCount} 个低风险包可以交给系统自动处理。`,
-      href: getViewHref(workSlug, "reviews"),
-      cta: "处理低风险包",
-    };
-  }
-
-  if (formalReviewChapterCount > 0) {
-    return {
-      title: "先处理正式复核章节",
-      description: `当前还有 ${formalReviewChapterCount} 个后续章节被抬升为正式复核，建议在清理完当前包后优先回看这些章节的连续性。`,
-      href: getViewHref(workSlug, "reviews"),
-      cta: "打开正式复核章节",
-    };
-  }
-
-  if (fileSourceCount > 0) {
-    return {
-      title: "检查剧情资产是否贴合当前正文",
-      description: "目录已经绑定完成，下一步最有价值的是快速确认角色、关系、伏笔和时间线是否仍然合理。",
-      href: getViewHref(workSlug, "story"),
-      cta: "查看剧情资产",
-    };
-  }
-
-  return {
-    title: "先绑定本地目录",
-    description: "只有把作品和本地小说目录绑定之后，系统才能开始同步、抽取、审查和自动维护。",
-    href: getViewHref(workSlug, "reviews"),
-    cta: "绑定目录",
-  };
+function getWorkspaceHref(workSlug: string, document?: string): string {
+  return getViewHref(workSlug, "manuscript", document);
 }
 
-function renderAssetSection(title: string, eyebrow: string, count: number, items: Array<ReactNode>, emptyText: string) {
+function getStageLabel(stage?: string): string {
+  return stage ? stageLabels[stage] ?? stage : "未设置";
+}
+
+function toShortPath(value?: string): string {
+  if (!value) return "当前内容";
+  const parts = value.replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts.slice(-2).join(" / ") || value;
+}
+
+function toFileName(value?: string): string {
+  if (!value) return "当前文档";
+  const parts = value.replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts.at(-1) || value;
+}
+
+function getSourceKindLabel(path?: string): string {
+  const normalized = (path ?? "").replace(/\\/g, "/");
+  if (normalized.includes("/00-设定/")) return "设定";
+  if (normalized.includes("/01-大纲/")) return "大纲";
+  if (normalized.includes("/02-正文/")) return "正文";
+  return "文档";
+}
+
+function humanizeActionLabel(action: string): string {
+  return actionLabels[action] ?? action;
+}
+
+function buildSettingSections(snapshot: WorkbenchProjectSnapshot, protocolSummary: WorkProtocolSummary | null): SettingSection[] {
+  const currentVolume = snapshot.volumes.find((volume) => volume.order === protocolSummary?.activeVolume) ?? snapshot.volumes[0];
+
+  return [
+    {
+      id: "positioning",
+      label: "作品定位",
+      blocks: [
+        { title: "题材与平台", text: `${snapshot.work.genre}${snapshot.work.subgenre ? ` / ${snapshot.work.subgenre}` : ""} / ${snapshot.work.targetPlatform}` },
+        { title: "一句话卖点", text: snapshot.work.tagline },
+      ],
+    },
+    {
+      id: "constraints",
+      label: "硬约束",
+      blocks: [
+        { title: "必须守住的边界", list: snapshot.work.hardConstraints },
+        { title: "读者预期", list: snapshot.work.targetAudience },
+      ],
+    },
+    {
+      id: "volume",
+      label: "当前卷重点",
+      blocks: [
+        { title: "卷目标", text: currentVolume?.goal ?? "暂未填写卷目标。" },
+        { title: "主冲突", text: currentVolume?.mainConflict ?? "暂未填写主冲突。" },
+        { title: "这卷必须交代的信息", list: currentVolume?.mustDeliverInfo ?? [] },
+      ],
+    },
+  ];
+}
+
+function getSelectedKey(
+  routeView: RouteView,
+  selectedDocumentKey: string | undefined,
+  settingSections: SettingSection[],
+  outlineWorkspace: WorkbenchDocumentWorkspace | null,
+  chapterWorkspace: WorkbenchDocumentWorkspace | null,
+): string | undefined {
+  if (selectedDocumentKey) return selectedDocumentKey;
+  if (routeView === "outline") return outlineWorkspace?.selectedDocumentId ? `outline:${outlineWorkspace.selectedDocumentId}` : undefined;
+  if (routeView === "settings") return settingSections[0] ? `setting:${settingSections[0].id}` : undefined;
+  return chapterWorkspace?.selectedDocumentId ? `chapter:${chapterWorkspace.selectedDocumentId}` : undefined;
+}
+
+function getPriorityBundles(snapshot: WorkbenchProjectSnapshot): WorkbenchReviewBundleSummary[] {
+  return [...snapshot.pendingConflictBundles, ...snapshot.pendingReviewBundles.filter((item) => item.blockingLevel !== "none")];
+}
+
+function renderOverview(snapshot: WorkbenchProjectSnapshot, protocolSummary: WorkProtocolSummary | null) {
+  const latestChapter = snapshot.latestChapter ?? snapshot.chapters.at(-1);
+  const currentVolume = snapshot.volumes.find((volume) => volume.order === protocolSummary?.activeVolume) ?? snapshot.volumes[0];
+  const pendingCount = snapshot.pendingConflictBundles.length + snapshot.followUpQueue.formalReviewTasks.length;
+  const recentChapters = [...snapshot.chapters].slice(-4).reverse();
+
   return (
-    <section className="overview-block">
-      <div className="overview-head">
+    <section className={styles.overviewGrid}>
+      <article className={styles.panel}>
+        <p className={styles.sectionLabel}>当前方向</p>
+        <h2 className={styles.sectionTitle}>{protocolSummary?.currentFocusLabel ?? "继续推进这本书"}</h2>
+        <p className={styles.sectionCopy}>{protocolSummary?.currentFocusGoal ?? snapshot.work.tagline}</p>
+
+        <div className={styles.metricGrid}>
+          <article className={styles.metricCard}><span className={styles.metricLabel}>状态</span><strong className={styles.metricValue}>{getStageLabel(protocolSummary?.activeStage ?? snapshot.work.status)}</strong></article>
+          <article className={styles.metricCard}><span className={styles.metricLabel}>卷 / 章</span><strong className={styles.metricValue}>{`${protocolSummary?.activeVolume ?? "-"} / ${protocolSummary?.activeChapter ?? "-"}`}</strong></article>
+          <article className={styles.metricCard}><span className={styles.metricLabel}>角色</span><strong className={styles.metricValue}>{snapshot.stats.characterCount}</strong></article>
+          <article className={styles.metricCard}><span className={styles.metricLabel}>待处理</span><strong className={styles.metricValue}>{pendingCount}</strong></article>
+        </div>
+      </article>
+
+      <article className={styles.panel}>
+        <p className={styles.sectionLabel}>卷与最近章节</p>
+        <h2 className={styles.sectionTitle}>{currentVolume?.title ?? "当前卷"}</h2>
+        <div className={styles.infoList}>
+          <section className={styles.infoItem}><strong className={styles.infoTitle}>卷目标</strong><p className={styles.infoText}>{currentVolume?.goal ?? snapshot.work.tagline}</p></section>
+          {recentChapters.map((chapter) => (
+            <section className={styles.infoItem} key={chapter.id}><strong className={styles.infoTitle}>{`第 ${chapter.order} 章 · ${chapter.title}`}</strong><p className={styles.infoText}>{chapter.summary}</p></section>
+          ))}
+          {latestChapter ? <section className={styles.infoItem}><strong className={styles.infoTitle}>最近更新</strong><p className={styles.infoText}>{latestChapter.title}</p></section> : null}
+        </div>
+      </article>
+    </section>
+  );
+}
+
+function renderWorkspace(
+  snapshot: WorkbenchProjectSnapshot,
+  protocolSummary: WorkProtocolSummary | null,
+  chapterWorkspace: WorkbenchDocumentWorkspace | null,
+  outlineWorkspace: WorkbenchDocumentWorkspace | null,
+  routeView: RouteView,
+  selectedDocumentKey?: string,
+) {
+  const settingSections = buildSettingSections(snapshot, protocolSummary);
+  const selectedKey = getSelectedKey(routeView, selectedDocumentKey, settingSections, outlineWorkspace, chapterWorkspace);
+
+  const settingItems: ContentItem[] = settingSections.map((section) => ({ key: `setting:${section.id}`, title: section.label, meta: "长期规则", href: getWorkspaceHref(snapshot.work.slug, `setting:${section.id}`) }));
+  const outlineItems: ContentItem[] = (outlineWorkspace?.items ?? []).map((item) => ({ key: `outline:${item.id}`, title: item.title, meta: item.subtitle, href: getWorkspaceHref(snapshot.work.slug, `outline:${item.id}`) }));
+  const chapterItems: ContentItem[] = (chapterWorkspace?.items ?? []).map((item) => ({ key: `chapter:${item.id}`, title: item.title, meta: item.subtitle, href: getWorkspaceHref(snapshot.work.slug, `chapter:${item.id}`) }));
+
+  const selectedSetting = selectedKey?.startsWith("setting:") ? settingSections.find((section) => section.id === selectedKey.replace("setting:", "")) : undefined;
+  const selectedOutline = selectedKey?.startsWith("outline:") && outlineWorkspace ? outlineWorkspace.items.find((item) => item.id === selectedKey.replace("outline:", "")) : undefined;
+  const selectedChapter = selectedKey?.startsWith("chapter:") && chapterWorkspace ? chapterWorkspace.items.find((item) => item.id === selectedKey.replace("chapter:", "")) : undefined;
+
+  const sourceLabel = selectedSetting ? `00-设定 / ${selectedSetting.label}` : selectedOutline ? `01-大纲 / ${toShortPath(outlineWorkspace?.selectedRelativePath)}` : `02-正文 / ${toShortPath(chapterWorkspace?.selectedRelativePath)}`;
+  const title = selectedSetting?.label ?? selectedOutline?.title ?? selectedChapter?.title ?? "当前内容";
+
+  return (
+    <section className={styles.workspaceGrid}>
+      <aside className={`${styles.panel} ${styles.treePanel}`.trim()}>
+        <div className={styles.treeHeader}>
+          <p className={styles.sectionLabel}>目录树</p>
+          <strong className={styles.treeRoot}>{`books / ${snapshot.work.title}`}</strong>
+          <p className={styles.infoText}>目录直接映射书稿，只保留阅读，不在这里编辑。</p>
+        </div>
+
+        <div className={styles.treeGroup}>
+          <div className={styles.treeGroupHead}><strong className={styles.treeGroupTitle}>00-设定</strong><span className={styles.treeCount}>{settingItems.length}</span></div>
+          <div className={styles.treeList}>{settingItems.map((item) => <Link key={item.key} className={`${styles.treeItem} ${item.key === selectedKey ? styles.treeItemActive : ""}`.trim()} href={item.href}><span className={styles.treeItemTitle}>{item.title}</span><span className={styles.treeItemMeta}>{item.meta}</span></Link>)}</div>
+        </div>
+
+        <div className={styles.treeGroup}>
+          <div className={styles.treeGroupHead}><strong className={styles.treeGroupTitle}>01-大纲</strong><span className={styles.treeCount}>{outlineItems.length}</span></div>
+          <div className={styles.treeList}>{outlineItems.map((item) => <Link key={item.key} className={`${styles.treeItem} ${item.key === selectedKey ? styles.treeItemActive : ""}`.trim()} href={item.href}><span className={styles.treeItemTitle}>{item.title}</span><span className={styles.treeItemMeta}>{item.meta}</span></Link>)}</div>
+        </div>
+
+        <div className={styles.treeGroup}>
+          <div className={styles.treeGroupHead}><strong className={styles.treeGroupTitle}>02-正文</strong><span className={styles.treeCount}>{chapterItems.length}</span></div>
+          <div className={styles.treeList}>{chapterItems.map((item) => <Link key={item.key} className={`${styles.treeItem} ${item.key === selectedKey ? styles.treeItemActive : ""}`.trim()} href={item.href}><span className={styles.treeItemTitle}>{item.title}</span><span className={styles.treeItemMeta}>{item.meta}</span></Link>)}</div>
+        </div>
+      </aside>
+
+      <article className={`${styles.panel} ${styles.readerPanel}`.trim()}>
+        <div className={styles.readerHead}>
+          <p className={styles.sectionLabel}>工作区</p>
+          <p className={styles.readerSource}>{sourceLabel}</p>
+          <h2 className={styles.readerTitle}>{title}</h2>
+        </div>
+
+        <div className={styles.readerStage}>
+          {selectedSetting ? (
+            <div className={styles.readerRich}>
+              {selectedSetting.blocks.map((block) => (
+                <section className={styles.infoItem} key={`${selectedSetting.id}-${block.title}`}>
+                  <strong className={styles.infoTitle}>{block.title}</strong>
+                  {block.text ? <p className={styles.infoText}>{block.text}</p> : null}
+                  {block.list?.length ? <div className={styles.infoList}>{block.list.map((item) => <p className={styles.infoText} key={item}>{item}</p>)}</div> : null}
+                </section>
+              ))}
+            </div>
+          ) : (
+            <div className={styles.readerScroll}>
+              <article className={styles.readerArticle}><pre>{selectedOutline ? outlineWorkspace?.selectedContent : chapterWorkspace?.selectedContent}</pre></article>
+            </div>
+          )}
+        </div>
+      </article>
+    </section>
+  );
+}
+
+function renderCharacters(snapshot: WorkbenchProjectSnapshot) {
+  const relationHighlights = [...snapshot.graph.edges].sort((left, right) => right.tensionLevel - left.tensionLevel).slice(0, 4);
+
+  return (
+    <section className={styles.overviewGrid}>
+      <article className={styles.panel}>
+        <p className={styles.sectionLabel}>角色</p>
+        <h2 className={styles.sectionTitle}>当前核心人物</h2>
+        <div className={styles.characterGrid}>
+          {snapshot.characters.map((character) => (
+            <article className={styles.characterCard} key={character.id}>
+              <div className={styles.avatar}>{character.name.slice(0, 1)}</div>
+              <div className={styles.characterText}>
+                <strong className={styles.infoTitle}>{character.name}</strong>
+                <p className={styles.infoText}>{`${character.role} / ${character.archetype}`}</p>
+                <p className={styles.infoText}>{character.publicIdentity}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </article>
+
+      <article className={styles.panel}>
+        <p className={styles.sectionLabel}>关系热度</p>
+        <h2 className={styles.sectionTitle}>最近最可能引爆剧情的关系</h2>
+        <div className={styles.infoList}>
+          {relationHighlights.length ? relationHighlights.map((edge) => <section className={styles.infoItem} key={`${edge.sourceCharacterId}-${edge.targetCharacterId}-${edge.publicLabel}`}><strong className={styles.infoTitle}>{`${edge.sourceCharacterName} → ${edge.targetCharacterName}`}</strong><p className={styles.infoText}>{edge.publicLabel}</p>{edge.privateLabel ? <p className={styles.infoText}>{`暗线：${edge.privateLabel}`}</p> : null}</section>) : <p className={styles.emptyText}>当前还没有显著的关系变化。</p>}
+        </div>
+      </article>
+    </section>
+  );
+}
+
+function renderIssues(snapshot: WorkbenchProjectSnapshot) {
+  const bundles = getPriorityBundles(snapshot);
+  const selectedBundle = bundles[0];
+  const selectedFormalTask = snapshot.followUpQueue.formalReviewTasks[0];
+  const selectedWatchChapter = snapshot.followUpQueue.watchChapters[0];
+
+  if (!bundles.length && !selectedFormalTask && !selectedWatchChapter) {
+    return <section className={styles.panel}><p className={styles.emptyText}>当前没有需要你拍板的例外。</p></section>;
+  }
+
+  return (
+    <section className={styles.issueGrid}>
+      <article className={`${styles.panel} ${styles.issueList}`.trim()}>
         <div>
-          <p className="eyebrow guide-eyebrow">{eyebrow}</p>
-          <h3>{title}</h3>
+          <p className={styles.sectionLabel}>待处理列表</p>
+          <h2 className={styles.sectionTitle}>需要你拍板的例外</h2>
         </div>
-        <span className="status-badge">{count}</span>
-      </div>
-      {items.length ? (
-        <ul className="compact-asset-list">{items}</ul>
-      ) : (
-        <div className="empty-state compact-state">
-          <p>{emptyText}</p>
+
+        <div className={styles.infoList}>
+          {bundles.map((bundle, index) => (
+            <article className={`${styles.issueCard} ${index === 0 ? styles.issueCardActive : ""}`.trim()} key={bundle.id}>
+              <div className={styles.issueCardTop}><span className={styles.issueSource}>{`${getSourceKindLabel(bundle.sourcePath)} · ${toFileName(bundle.sourcePath)}`}</span><span className={styles.issueTone}>{issueToneLabels[bundle.riskNature] ?? bundle.riskNature}</span></div>
+              <strong className={styles.infoTitle}>{bundle.summary}</strong>
+              <p className={styles.infoText}>{bundle.riskReasons[0] ?? "系统在这里还是拿不太准。"}</p>
+            </article>
+          ))}
         </div>
-      )}
-    </section>
-  );
-}
+      </article>
 
-function renderStoryOverview(snapshot: WorkbenchProjectSnapshot) {
-  const volumePreview = snapshot.volumes.slice(0, 4);
-  const characterPreview = snapshot.characters.slice(0, 5);
-  const chapterPreview = [...snapshot.chapters].slice(-5).reverse();
-
-  return (
-    <article className="content-card">
-      <div className="section-heading">
-        <p>资产</p>
-        <h2>结构化剧情快照</h2>
-      </div>
-      <p className="panel-copy">
-        这里主要用于检查当前的结构化资产是否仍然贴合正文。默认先看，不建议把这里当成重手工录入后台。
-      </p>
-      <div className="overview-stack">
-        {renderAssetSection(
-          "分卷",
-          "分卷",
-          snapshot.volumes.length,
-          volumePreview.map((volume) => (
-            <li key={volume.id}>
-              <strong>{`卷 ${volume.order} / ${volume.title}`}</strong>
-              <p>{volume.goal}</p>
-              <p className="asset-meta">主冲突：{volume.mainConflict}</p>
-            </li>
-          )),
-          "当前还没有分卷资产。",
-        )}
-        {renderAssetSection(
-          "角色",
-          "角色",
-          snapshot.characters.length,
-          characterPreview.map((character) => (
-            <li key={character.id}>
-              <strong>{character.name}</strong>
-              <p>{`${character.role} / ${character.archetype}`}</p>
-              <p className="asset-meta">{character.publicIdentity}</p>
-            </li>
-          )),
-          "当前还没有稳定的角色资产。",
-        )}
-        {renderAssetSection(
-          "章节",
-          "章节",
-          snapshot.chapters.length,
-          chapterPreview.map((chapter) => (
-            <li key={chapter.id}>
-              <strong>{`第 ${chapter.order} 章 / ${chapter.title}`}</strong>
-              <p>{chapter.summary}</p>
-              <p className="asset-meta">章节目标：{chapter.chapterGoal}</p>
-            </li>
-          )),
-          "当前还没有章节卡。",
-        )}
-      </div>
-    </article>
-  );
-}
-
-function renderRelationPreview(snapshot: WorkbenchProjectSnapshot) {
-  const relationPreview = snapshot.graph.edges.slice(0, 8);
-
-  return (
-    <article className="content-card">
-      <div className="section-heading">
-        <p>关系</p>
-        <h2>关系预览</h2>
-      </div>
-      <p className="panel-copy">关系图谱完整落地前，这里先用于查看当前关系事实和最近证据。</p>
-      <ul className="asset-list relation-preview-list">
-        {relationPreview.length ? relationPreview.map((edge) => (
-          <li key={`${edge.sourceCharacterId}:${edge.targetCharacterId}:${edge.publicLabel}`}>
-            <strong>{edge.sourceCharacterName} -&gt; {edge.targetCharacterName}</strong>
-            <p>{edge.publicLabel}{edge.privateLabel ? ` / ${edge.privateLabel}` : ""}</p>
-            <p className="asset-meta">{`信任 ${edge.trustLevel} / 紧张 ${edge.tensionLevel}`}</p>
-            {edge.latestSourcePath ? (
-              <p className="asset-meta relation-source-meta">
-                {`来源 ${edge.latestSourcePath}`}
-                {edge.sourceRefCount > 1 ? ` / 引用 ${edge.sourceRefCount}` : ""}
-              </p>
-            ) : null}
-            {edge.latestEvidenceQuote ? <p className="evidence-quote">{edge.latestEvidenceQuote}</p> : null}
-          </li>
-        )) : <li className="empty-inline">当前还没有结构化关系事实。</li>}
-      </ul>
-    </article>
-  );
-}
-
-function renderRiskBundle(bundle: WorkbenchReviewBundleSummary) {
-  return (
-    <li key={bundle.id}>
-      <strong>{bundle.title}</strong>
-      <p>{bundle.summary}</p>
-      <p className="asset-meta">
-        {`风险 ${blockingLevelLabelMap[bundle.blockingLevel] ?? bundle.blockingLevel}`}
-        {` / 性质 ${riskNatureLabelMap[bundle.riskNature] ?? bundle.riskNature}`}
-        {` / 中风险 ${bundle.mediumSeverityCount}`}
-        {` / 高风险 ${bundle.highSeverityCount}`}
-        {bundle.sourceRefCount > 0 ? ` / 引用 ${bundle.sourceRefCount}` : ""}
-      </p>
-      <p className="asset-meta">{bundle.actionPlan.primaryAction}</p>
-      {bundle.actionPlan.steps.length ? (
-        <ul className="risk-reason-list compact-risk-list">
-          {bundle.actionPlan.steps.slice(0, 3).map((step) => (
-            <li key={`${bundle.id}:plan:${step}`} className="risk-reason-item">{step}</li>
-          ))}
-        </ul>
-      ) : null}
-      {bundle.riskReasons.length ? (
-        <ul className="risk-reason-list compact-risk-list">
-          {bundle.riskReasons.map((reason) => (
-            <li key={`${bundle.id}:${reason}`} className="risk-reason-item">{reason}</li>
-          ))}
-        </ul>
-      ) : null}
-      {bundle.latestEvidenceQuote ? <p className="evidence-quote">{bundle.latestEvidenceQuote}</p> : null}
-    </li>
-  );
-}
-
-function renderAttentionChapterGroup(
-  title: string,
-  chapters: WorkbenchAttentionChapterSummary[],
-  emptyText: string,
-) {
-  return (
-    <section className="attention-group-card">
-      <div className="overview-head">
-        <h4>{title}</h4>
-        <span className="status-badge">{chapters.length}</span>
-      </div>
-      {chapters.length ? (
-        <ul className="asset-list trace-list">
-          {chapters.map((chapter) => (
-            <li key={chapter.chapterId}>
-              <strong>{chapter.label}</strong>
-              <p className="asset-meta">
-                {"触发变更包 " + chapter.triggerBundleCount}
-                {" / 复核包 " + chapter.reviewBundleCount}
-                {" / 冲突包 " + chapter.conflictBundleCount}
-                {" / 来源文档 " + chapter.sourceDocumentCount}
-              </p>
-              <p className="asset-meta">{chapter.reasonSummary}</p>
-              <p className="asset-meta">{chapter.recommendedAction}</p>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="empty-state compact-state">
-          <p>{emptyText}</p>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function renderAttentionChapters(attentionChapters: WorkbenchAttentionChapterSummary[]) {
-  const formalReviewChapters = attentionChapters.filter((chapter) => chapter.followUpMode === "formal-review");
-  const watchChapters = attentionChapters.filter((chapter) => chapter.followUpMode === "watch");
-
-  return (
-    <section className="trace-section">
-      <div className="overview-head">
-        <h3>后续章节动作分流</h3>
-        <span className="status-badge">{attentionChapters.length}</span>
-      </div>
-      <div className="stat-chip-row compact-chip-row">
-        <span className="stat-chip">正式复核 {formalReviewChapters.length}</span>
-        <span className="stat-chip">提醒回看 {watchChapters.length}</span>
-      </div>
-      <div className="attention-chapter-grid">
-        {renderAttentionChapterGroup("正式复核章节", formalReviewChapters, "当前没有需要正式复核的后续章节。")}
-        {renderAttentionChapterGroup("提醒回看章节", watchChapters, "当前没有仅需提醒回看的后续章节。")}
-      </div>
-    </section>
-  );
-}
-
-function renderFormalReviewQueue(
-  workId: string,
-  workSlug: string,
-  currentView: WorkDetailView,
-  followUpQueue: WorkbenchProjectSnapshot["followUpQueue"],
-) {
-  const tasks = followUpQueue.formalReviewTasks;
-  const recentResolvedTasks = followUpQueue.recentResolvedTasks;
-
-  return (
-    <article className="content-card">
-      <div className="section-heading">
-        <p>{"\u540e\u7eed\u5904\u7406"}</p>
-        <h2>{"\u6b63\u5f0f\u590d\u6838\u961f\u5217"}</h2>
-      </div>
-      <p className="panel-copy">{"\u8fd9\u91cc\u53ea\u4fdd\u7559\u88ab\u7cfb\u7edf\u62ac\u5347\u4e3a\u6b63\u5f0f\u590d\u6838\u7684\u540e\u7eed\u7ae0\u8282\u4efb\u52a1\u3002\u4efb\u52a1\u5904\u7406\u5b8c\u540e\uff0c\u4f1a\u4fdd\u7559\u7ed3\u679c\u548c\u5904\u7406\u6458\u8981\uff0c\u65b9\u4fbf\u540e\u7eed\u56de\u770b\u3002"}</p>
-      <div className="stat-chip-row compact-chip-row">
-        <span className="stat-chip">{"\u6b63\u5f0f\u590d\u6838"} {tasks.length}</span>
-        <span className="stat-chip">{"\u6700\u8fd1\u5df2\u5904\u7406"} {recentResolvedTasks.length}</span>
-        {followUpQueue.highestPriorityTask ? <span className="stat-chip">{"\u6700\u9ad8\u4f18\u5148\u7ea7"} {followUpQueue.highestPriorityTask.label}</span> : null}
-      </div>
-      {tasks.length ? (
-        <ul className="compact-asset-list attention-chapter-list">
-          {tasks.map((task) => (
-            <li key={task.id}>
-              <strong>{task.label}</strong>
-              <div className="stat-chip-row compact-chip-row">
-                <span className="stat-chip">{task.priority === "high" ? "\u9ad8\u4f18\u5148\u7ea7" : "\u5e38\u89c4\u4f18\u5148\u7ea7"}</span>
-                <span className="stat-chip">{"\u7ae0\u8282\u7ea7\u6b63\u5f0f\u590d\u6838"}</span>
-              </div>
-              <p className="asset-meta">{task.summary}</p>
-              <p className="asset-meta">{task.nextAction}</p>
-              <form action={updateFollowUpTaskAction} className="review-action-form follow-up-task-form">
-                <input type="hidden" name="workSlug" value={workSlug} />
-                <input type="hidden" name="workId" value={workId} />
-                <input type="hidden" name="chapterId" value={task.chapterId} />
-                <input type="hidden" name="taskKind" value={task.taskKind} />
-                <input type="hidden" name="taskFingerprint" value={task.taskFingerprint} />
-                <input type="hidden" name="returnView" value={currentView} />
-                <label className="field-block field-block-wide review-note-field">
-                  <span>{"\u5904\u7406\u7ed3\u679c\u6458\u8981"}</span>
-                  <input name="outcomeSummary" placeholder={"\u4f8b\u5982\uff1a\u4eba\u7269\u52a8\u673a\u6210\u7acb\uff0c\u4e0d\u9700\u8981\u989d\u5916\u8c03\u6574\u3002"} />
-                </label>
-                <label className="field-block field-block-wide review-note-field">
-                  <span>{"\u5904\u7406\u5907\u6ce8"}</span>
-                  <input name="decisionNote" placeholder={"\u8865\u5145\u8bf4\u660e\uff0c\u65b9\u4fbf\u540e\u7eed\u56de\u770b\u3002"} />
-                </label>
-                <div className="review-action-row follow-up-action-row">
-                  <button type="submit" name="taskResult" value="completed:consistent">{"\u590d\u6838\u901a\u8fc7"}</button>
-                  <button type="submit" name="taskResult" value="completed:needs-revision" className="ghost-button">{"\u6807\u8bb0\u9700\u4fee\u8ba2"}</button>
-                  <button type="submit" name="taskResult" value="completed:needs-rescan" className="ghost-button">{"\u6807\u8bb0\u91cd\u8dd1\u62bd\u53d6"}</button>
-                  <button type="submit" name="taskResult" value="dismissed:deferred" className="ghost-button">{"\u672c\u8f6e\u8df3\u8fc7"}</button>
-                </div>
-              </form>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="empty-state compact-state">
-          <p>{"\u5f53\u524d\u6ca1\u6709\u88ab\u62ac\u5347\u4e3a\u6b63\u5f0f\u590d\u6838\u7684\u540e\u7eed\u7ae0\u8282\u3002"}</p>
-        </div>
-      )}
-      {recentResolvedTasks.length ? (
-        <section className="follow-up-history-section">
-          <div className="overview-head">
-            <h3>{"\u6700\u8fd1\u5904\u7406\u7ed3\u679c"}</h3>
-            <span className="status-badge">{recentResolvedTasks.length}</span>
-          </div>
-          <ul className="compact-asset-list follow-up-history-list">
-            {recentResolvedTasks.map((task) => (
-              <li key={task.id + ":resolved"}>
-                <strong>{task.label}</strong>
-                <div className="stat-chip-row compact-chip-row">
-                  <span className="stat-chip">{formalReviewOutcomeLabelMap[task.taskOutcome ?? "deferred"] ?? task.taskOutcome ?? "\u672c\u8f6e\u8df3\u8fc7"}</span>
-                  <span className="stat-chip">{task.taskStatus === "completed" ? "\u5df2\u5b8c\u6210" : "\u5df2\u8df3\u8fc7"}</span>
-                </div>
-                <p className="asset-meta">{task.outcomeSummary ?? task.decisionNote ?? task.nextAction}</p>
-                {task.decidedAt ? <p className="asset-meta">{"\u5904\u7406\u65f6\u95f4\uff1a"}{task.decidedAt}</p> : null}
-                <form action={updateFollowUpTaskAction} className="inline-action-form">
-                  <input type="hidden" name="workSlug" value={workSlug} />
-                  <input type="hidden" name="workId" value={workId} />
-                  <input type="hidden" name="chapterId" value={task.chapterId} />
-                  <input type="hidden" name="taskKind" value={task.taskKind} />
-                  <input type="hidden" name="taskFingerprint" value={task.taskFingerprint} />
-                  <input type="hidden" name="returnView" value={currentView} />
-                  <button type="submit" name="taskResult" value="pending">{"\u91cd\u65b0\u6253\u5f00"}</button>
-                </form>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-    </article>
-  );
-}
-function renderSourceTracePanel(
-  workSlug: string,
-  recentSourceRefs: WorkbenchProjectSnapshot["recentSourceRefs"],
-  pendingConflictBundles: WorkbenchProjectSnapshot["pendingConflictBundles"],
-  attentionChapters: WorkbenchAttentionChapterSummary[],
-) {
-  return (
-    <article className="content-card">
-      <div className="section-heading">
-        <p>追踪</p>
-        <h2>来源与冲突追踪</h2>
-      </div>
-      <div className="trace-stack">
-        {renderAttentionChapters(attentionChapters)}
-        <section className="trace-section">
-          <div className="overview-head">
-            <h3>需要优先关注的冲突包</h3>
-            <Link className="ghost-link" href={`/works/${encodeURIComponent(workSlug)}?view=reviews`}>
-              打开待处理
-            </Link>
-          </div>
-          <ul className="asset-list trace-list">
-            {pendingConflictBundles.length ? pendingConflictBundles.map((bundle) => renderRiskBundle(bundle)) : (
-              <li className="empty-inline">当前没有需要优先处理的冲突包。</li>
-            )}
-          </ul>
-        </section>
-        <section className="trace-section">
-          <div className="overview-head">
-            <h3>最近来源引用</h3>
-            <span className="status-badge">{recentSourceRefs.length}</span>
-          </div>
-          <ul className="asset-list trace-list">
-            {recentSourceRefs.length ? recentSourceRefs.map((sourceRef) => (
-              <li key={sourceRef.id}>
-                <strong>{sourceRef.assetType}</strong>
-                <p className="asset-meta">
-                  {sourceRef.sourcePath ?? sourceRef.locator}
-                  {sourceRef.documentKind ? ` / ${sourceRef.documentKind}` : ""}
-                  {sourceRef.referenceKind ? ` / ${sourceRef.referenceKind}` : ""}
-                </p>
-                {sourceRef.evidenceQuote ? <p className="evidence-quote">{sourceRef.evidenceQuote}</p> : null}
-              </li>
-            )) : <li className="empty-inline">当前还没有来源引用。</li>}
-          </ul>
-        </section>
-      </div>
-    </article>
-  );
-}
-
-function renderDetailView(currentView: WorkDetailView, snapshot: WorkbenchProjectSnapshot, graphFilters: GraphViewFilters, reviewTraceFilters: { documentId?: string; path?: string }) {
-  const { work, fileSources, pendingReviewBundles, pendingConflictBundles, recentSourceRefs, attentionChapters, reviewStats, followUpQueue } = snapshot;
-  const formalReviewChapterCount = followUpQueue.formalReviewTasks.length;
-  const focusState = getFocusState(work.slug, fileSources.length, reviewStats, formalReviewChapterCount);
-
-  if (currentView === "overview") {
-    return (
-      <section className="detail-view-grid">
-        <div className="detail-stack">
-          <article className="content-card detail-summary-card">
-            <div className="section-heading">
-              <p>焦点</p>
-              <h2>当前最该处理什么</h2>
+      <article className={`${styles.panel} ${styles.issueDetail}`.trim()}>
+        {selectedBundle ? (
+          <>
+            <div>
+              <p className={styles.sectionLabel}>{`${getSourceKindLabel(selectedBundle.sourcePath)} / ${toFileName(selectedBundle.sourcePath)}`}</p>
+              <h2 className={styles.sectionTitle}>{selectedBundle.summary}</h2>
             </div>
-            <p className="panel-copy">{focusState.description}</p>
-            <div className="detail-summary-list">
-              <div className="detail-summary-item">
-                <span className="detail-summary-key">变更包</span>
-                <strong className="detail-summary-value">{reviewStats.bundleCount}</strong>
-              </div>
-              <div className="detail-summary-item">
-                <span className="detail-summary-key">需要复核</span>
-                <strong className="detail-summary-value">{reviewStats.reviewBundleCount}</strong>
-              </div>
-              <div className="detail-summary-item">
-                <span className="detail-summary-key">冲突包</span>
-                <strong className="detail-summary-value">{reviewStats.conflictBundleCount}</strong>
-              </div>
-              <div className="detail-summary-item">
-                <span className="detail-summary-key">正式复核章节</span>
-                <strong className="detail-summary-value">{reviewStats.formalReviewChapterCount}</strong>
-              </div>
-              <div className="detail-summary-item">
-                <span className="detail-summary-key">提醒回看章节</span>
-                <strong className="detail-summary-value">{reviewStats.watchChapterCount}</strong>
-              </div>
-              <div className="detail-summary-item">
-                <span className="detail-summary-key">自动接收</span>
-                <strong className="detail-summary-value">{reviewStats.autoApprovableBundleCount}</strong>
-              </div>
-              <div className="detail-summary-item">
-                <span className="detail-summary-key">下一步</span>
-                <Link className="detail-primary-link" href={focusState.href}>{focusState.cta}</Link>
-              </div>
+
+            <div className={styles.compareGrid}>
+              <section className={styles.compareCard}><span className={styles.compareLabel}>原文里已经写出来的内容</span><p className={styles.infoText}>{selectedBundle.latestEvidenceQuote ?? "暂时还没有抓到更直接的证据。"}</p></section>
+              <section className={`${styles.compareCard} ${styles.compareWarn}`.trim()}><span className={styles.compareLabel}>系统担心的地方</span><p className={styles.infoText}>{selectedBundle.riskReasons.join("；") || "当前只识别到这里还要你再看一眼。"}</p></section>
             </div>
-          </article>
-        </div>
-        <div className="detail-stack">
-          {renderFormalReviewQueue(work.id, work.slug, currentView, followUpQueue)}
-          {renderStoryOverview(snapshot)}
-          {renderRelationPreview(snapshot)}
-          {renderSourceTracePanel(work.slug, recentSourceRefs, pendingConflictBundles, attentionChapters)}
-        </div>
-      </section>
-    );
-  }
 
-  if (currentView === "reviews") {
-    return (
-      <section className="detail-view-grid detail-view-grid-single">
-        <WorkSyncPanel
-          workId={work.id}
-          workSlug={work.slug}
-          fileSources={fileSources}
-          pendingReviewBundles={pendingReviewBundles}
-          attentionChapters={attentionChapters}
-          activeTraceDocumentId={reviewTraceFilters.documentId}
-          activeTracePath={reviewTraceFilters.path}
-          reviewStats={reviewStats}
-        />
-      </section>
-    );
-  }
+            <section className={styles.infoItem}>
+              <strong className={styles.infoTitle}>建议怎么处理</strong>
+              <div className={styles.infoList}>
+                {selectedBundle.recommendedActions.length ? selectedBundle.recommendedActions.map((action) => <p className={styles.infoText} key={action}>{humanizeActionLabel(action)}</p>) : <p className={styles.infoText}>先回看原文，再决定是不是要改设定。</p>}
+              </div>
+            </section>
 
-  if (currentView === "story") {
-    return (
-      <section className="detail-view-grid">
-        <div className="detail-stack">{renderStoryOverview(snapshot)}</div>
-        <div className="detail-stack">
-          {renderFormalReviewQueue(work.id, work.slug, currentView, followUpQueue)}
-          {renderRelationPreview(snapshot)}
-          {renderSourceTracePanel(work.slug, recentSourceRefs, pendingConflictBundles, attentionChapters)}
-        </div>
-      </section>
-    );
-  }
-
-  if (currentView === "graph") {
-    return (
-      <RelationshipGraphPanel
-        snapshot={snapshot}
-        workSlug={work.slug}
-        activeCharacterId={graphFilters.focusCharacterId}
-        activeSourceType={graphFilters.sourceType}
-      />
-    );
-  }
-
-  return (
-    <section className="detail-view-grid">
-      <div className="detail-stack"><WorkManualPanel snapshot={snapshot} /></div>
-      <div className="detail-stack">{renderStoryOverview(snapshot)}</div>
+            {selectedFormalTask ? <section className={styles.infoItem}><strong className={styles.infoTitle}>正式复核</strong><p className={styles.infoText}>{`${selectedFormalTask.label} / ${selectedFormalTask.nextAction}`}</p></section> : null}
+            {selectedWatchChapter ? <section className={styles.infoItem}><strong className={styles.infoTitle}>建议回看</strong><p className={styles.infoText}>{`${selectedWatchChapter.label} / ${selectedWatchChapter.recommendedAction}`}</p></section> : null}
+          </>
+        ) : <p className={styles.emptyText}>当前没有可展示的待处理详情。</p>}
+      </article>
     </section>
   );
 }
 
-export function WorkDetailShell({ snapshot, activeView, graphFocusCharacterId, graphSourceType, reviewTraceDocumentId, reviewTracePath }: WorkDetailShellProps) {
-  const { work, stats, fileSources, reviewStats, attentionChapters, followUpQueue } = snapshot;
-  const currentView = normalizeDetailView(activeView);
-  const graphViewFilters: GraphViewFilters = {
-    focusCharacterId: graphFocusCharacterId || undefined,
-    sourceType: graphSourceType || undefined,
-  };
-  const formalReviewChapterCount = followUpQueue.formalReviewTasks.length;
-  const focusState = getFocusState(work.slug, fileSources.length, reviewStats, formalReviewChapterCount);
+export function WorkDetailShell({ snapshot, protocolSummary, chapterWorkspace, outlineWorkspace, activeView, selectedDocumentKey }: WorkDetailShellProps) {
+  const routeView = getRouteView(activeView);
+  const view = getUiView(routeView);
+  const latestChapter = snapshot.latestChapter ?? snapshot.chapters.at(-1);
+  const stageLabel = getStageLabel(protocolSummary?.activeStage ?? snapshot.work.status);
+  const pendingCount = snapshot.pendingConflictBundles.length + snapshot.followUpQueue.formalReviewTasks.length;
 
   return (
-    <main className="page-shell detail-shell">
-      <section className="hero-panel detail-hero">
-        <div className="hero-actions">
-          <Link className="ghost-link" href="/">返回书架</Link>
+    <main className={styles.shell}>
+      <div className={styles.topbar}>
+        <div className={styles.topbarMeta}>
+          <Link className={styles.backLink} href="/">返回书架</Link>
+          <span className={styles.stagePill}>{stageLabel}</span>
         </div>
-        <div className="detail-hero-grid">
-          <div className="detail-hero-copy-block">
-            <p className="eyebrow">作品详情</p>
-            <h1>{work.title}</h1>
-            <p className="hero-copy">{detailViewCopyMap[currentView]}</p>
-          </div>
-          <article className="detail-focus-card">
-            <p className="eyebrow">下一步</p>
-            <h2>{focusState.title}</h2>
-            <p>{focusState.description}</p>
-            <Link className="detail-primary-link" href={focusState.href}>{focusState.cta}</Link>
-          </article>
+        <div className={styles.titleBlock}>
+          <h1 className={styles.pageTitle}>{snapshot.work.title}</h1>
+          <p className={styles.pageMeta}>{snapshot.work.genre}{snapshot.work.subgenre ? ` / ${snapshot.work.subgenre}` : ""}{` / ${snapshot.work.targetPlatform}`}{latestChapter ? ` / 最近章节 ${latestChapter.title}` : ""}</p>
         </div>
-        <div className="detail-stat-grid">
-          <article className="detail-stat-card"><span>目录源</span><strong>{stats.sourceCount}</strong></article>
-          <article className="detail-stat-card"><span>变更包</span><strong>{reviewStats.bundleCount}</strong></article>
-          <article className="detail-stat-card"><span>需要复核</span><strong>{reviewStats.reviewBundleCount}</strong></article>
-          <article className="detail-stat-card"><span>冲突包</span><strong>{reviewStats.conflictBundleCount}</strong></article>
-          <article className="detail-stat-card"><span>正式复核章节</span><strong>{reviewStats.formalReviewChapterCount}</strong></article>
-          <article className="detail-stat-card"><span>提醒回看章节</span><strong>{reviewStats.watchChapterCount}</strong></article>
-          <article className="detail-stat-card"><span>自动接收</span><strong>{reviewStats.autoApprovableBundleCount}</strong></article>
-        </div>
-      </section>
+        <nav className={styles.tabRail}>
+          <Link className={`${styles.tabLink} ${view === "overview" ? styles.tabLinkActive : ""}`.trim()} href={getViewHref(snapshot.work.slug, "overview")}>总览</Link>
+          <Link className={`${styles.tabLink} ${view === "workspace" ? styles.tabLinkActive : ""}`.trim()} href={getViewHref(snapshot.work.slug, "manuscript")}>工作区</Link>
+          <Link className={`${styles.tabLink} ${view === "characters" ? styles.tabLinkActive : ""}`.trim()} href={getViewHref(snapshot.work.slug, "characters")}>角色与关系</Link>
+          <Link className={`${styles.tabLink} ${view === "issues" ? styles.tabLinkActive : ""}`.trim()} href={getViewHref(snapshot.work.slug, "issues")}>{pendingCount ? `待处理 ${pendingCount}` : "待处理"}</Link>
+        </nav>
+      </div>
 
-      <nav className="detail-nav" aria-label="作品详情导航">
-        {detailViewOrder.map((view) => {
-          const isActive = view === currentView;
-          return (
-            <Link
-              key={view}
-              className={isActive ? "detail-nav-link is-active" : "detail-nav-link"}
-              href={getViewHref(work.slug, view, view === "graph" ? graphViewFilters : undefined)}
-            >
-              <span>{detailViewLabelMap[view]}</span>
-              {view === "reviews" && reviewStats.bundleCount > 0 ? (
-                <span className="detail-nav-badge">{reviewStats.bundleCount}</span>
-              ) : null}
-            </Link>
-          );
-        })}
-      </nav>
-
-      {renderDetailView(currentView, snapshot, graphViewFilters, { documentId: reviewTraceDocumentId, path: reviewTracePath })}
+      {view === "overview" ? renderOverview(snapshot, protocolSummary) : null}
+      {view === "workspace" ? renderWorkspace(snapshot, protocolSummary, chapterWorkspace, outlineWorkspace, routeView, selectedDocumentKey) : null}
+      {view === "characters" ? renderCharacters(snapshot) : null}
+      {view === "issues" ? renderIssues(snapshot) : null}
     </main>
   );
 }

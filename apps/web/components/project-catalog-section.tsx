@@ -1,17 +1,33 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useDeferredValue, useState } from "react";
 
-import type { WorkbenchProjectSnapshot, WorkbenchProjectSummary } from "@aifiction/data";
+import type { WorkbenchProjectSummary } from "@aifiction/data";
+
+import { CreateWorkSection } from "./create-work-section";
+import styles from "./project-catalog-section.module.css";
 
 interface ProjectCatalogSectionProps {
   projects: WorkbenchProjectSummary[];
-  highlightedProject: WorkbenchProjectSnapshot | null;
   loadError?: string;
 }
 
-type ShelfFilter = "all" | "attention" | "recent";
+type ShelfFilter = "all" | "attention";
+
+const text = {
+  searchLabel: "搜索作品",
+  searchPlaceholder: "搜索书名、题材、平台或最近章节",
+  all: "全部作品",
+  attention: "需要先处理",
+  chapter: "章节",
+  pending: "待确认",
+  latest: "最近章节",
+  emptyTitle: "先创建第一本书",
+  emptyCopy: "当前还没有作品，先新建一本书，再进作品里补正文、大纲和设定。",
+  noResult: "当前筛选下没有作品，换个关键词试试。",
+  loadErrorTitle: "暂时还没读到作品数据",
+};
 
 const statusLabelMap: Record<string, string> = {
   planning: "规划中",
@@ -20,32 +36,28 @@ const statusLabelMap: Record<string, string> = {
   archived: "已归档",
 };
 
-const shelfFilters: Array<{ key: ShelfFilter; label: string }> = [
-  { key: "all", label: "全部作品" },
-  { key: "attention", label: "优先处理" },
-  { key: "recent", label: "最近更新" },
+const coverGradients = [
+  "linear-gradient(160deg, #3b2a24 0%, #896449 100%)",
+  "linear-gradient(160deg, #222d39 0%, #587797 100%)",
+  "linear-gradient(160deg, #2e2337 0%, #7962a6 100%)",
+  "linear-gradient(160deg, #2f3324 0%, #6f8053 100%)",
+  "linear-gradient(160deg, #3a2526 0%, #94656b 100%)",
 ];
-
-function formatCount(value: number): string {
-  return new Intl.NumberFormat("zh-CN").format(value);
-}
 
 function requiresAttention(project: WorkbenchProjectSummary): boolean {
   return project.stats.pendingReviewCount > 0 || project.stats.sourceCount === 0;
 }
 
 function matchesSearch(project: WorkbenchProjectSummary, keyword: string): boolean {
-  if (!keyword) {
-    return true;
-  }
+  if (!keyword) return true;
 
   const haystack = [
     project.work.title,
     project.work.tagline,
     project.work.genre,
-    project.work.subgenre ?? "",
+    project.work.subgenre || "",
     project.work.targetPlatform,
-    project.latestChapterTitle ?? "",
+    project.latestChapterTitle || "",
   ]
     .join(" ")
     .toLowerCase();
@@ -53,227 +65,121 @@ function matchesSearch(project: WorkbenchProjectSummary, keyword: string): boole
   return haystack.includes(keyword);
 }
 
-export function ProjectCatalogSection({
-  projects,
-  highlightedProject,
-  loadError,
-}: ProjectCatalogSectionProps) {
+function getCoverImage(project: WorkbenchProjectSummary): string | null {
+  const work = project.work as {
+    coverImageUrl?: string;
+    coverImage?: string;
+    coverUrl?: string;
+  };
+
+  return work.coverImageUrl ?? work.coverImage ?? work.coverUrl ?? null;
+}
+
+function buildCardStyle(project: WorkbenchProjectSummary) {
+  const image = getCoverImage(project);
+  if (image) {
+    return { backgroundImage: `url("${image}")` };
+  }
+
+  const hash = [...project.work.title].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return { backgroundImage: coverGradients[hash % coverGradients.length] || coverGradients[0] };
+}
+
+export function ProjectCatalogSection({ projects, loadError }: ProjectCatalogSectionProps) {
   const [searchValue, setSearchValue] = useState("");
   const [activeFilter, setActiveFilter] = useState<ShelfFilter>("all");
   const deferredSearch = useDeferredValue(searchValue.trim().toLowerCase());
 
   if (loadError) {
     return (
-      <section className="content-card bookshelf-panel" id="bookshelf">
-        <div className="section-heading">
-          <p>书架</p>
-          <h2>书架暂时读不到数据</h2>
-        </div>
-        <div className="empty-state">
-          <strong>当前还没成功读到 V2 数据。</strong>
+      <section className={styles.surface}>
+        <div className={styles.empty}>
+          <strong>{text.loadErrorTitle}</strong>
           <p>{loadError}</p>
         </div>
       </section>
     );
   }
 
-  if (!projects.length) {
-    return (
-      <section className="content-card bookshelf-panel" id="bookshelf">
-        <div className="section-heading">
-          <p>书架</p>
-          <h2>先把第一本书放进书架</h2>
-        </div>
-        <div className="empty-state">
-          <strong>当前数据库里还没有作品数据。</strong>
-          <p>
-            你可以先用下面的快速创建入口建一本书，或者先运行 <code>npm run db:v2-smoke</code> 看演示数据。
-          </p>
-        </div>
-      </section>
-    );
-  }
-
-  const orderedProjects = [...projects].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-  const filteredProjects = orderedProjects
-    .filter((project) => {
-      if (activeFilter === "attention") {
-        return requiresAttention(project);
-      }
-      if (activeFilter === "recent") {
-        return Boolean(project.latestChapterTitle || project.updatedAt);
-      }
-      return true;
-    })
+  const filteredProjects = [...projects]
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    .filter((project) => (activeFilter === "attention" ? requiresAttention(project) : true))
     .filter((project) => matchesSearch(project, deferredSearch));
 
-  const attentionProjects = orderedProjects.filter(requiresAttention).slice(0, 4);
-  const focusProject = highlightedProject;
-  const focusVolumes = focusProject?.volumes.slice(0, 3) ?? [];
-  const focusChapter = focusProject?.latestChapter;
-
   return (
-    <section className="content-card bookshelf-panel" id="bookshelf">
-      <div className="bookshelf-toolbar">
-        <div>
-          <p className="eyebrow">书架</p>
-          <h2>作品书架</h2>
-          <p className="panel-copy">你主要在这里找到作品、看当前状态，并快速决定下一步进入哪本书。</p>
-        </div>
-
-        <div className="bookshelf-search-block">
-          <label className="workspace-search-field">
-            <span>搜索作品</span>
+    <section className={styles.surface}>
+      <div className={styles.toolbar}>
+        <div className={styles.searchRow}>
+          <label className={styles.searchField}>
+            <span className={styles.searchLabel}>{text.searchLabel}</span>
             <input
               type="search"
               value={searchValue}
               onChange={(event) => setSearchValue(event.target.value)}
-              placeholder="搜索书名、题材、平台或最近章节"
+              placeholder={text.searchPlaceholder}
             />
           </label>
-          <div className="bookshelf-filter-row" role="tablist" aria-label="书架筛选">
-            {shelfFilters.map((filter) => (
-              <button
-                key={filter.key}
-                type="button"
-                className={`bookshelf-filter ${activeFilter === filter.key ? "is-active" : ""}`}
-                onClick={() => setActiveFilter(filter.key)}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
+          <CreateWorkSection />
+        </div>
+
+        <div className={styles.filters}>
+          <button
+            type="button"
+            className={`${styles.filter} ${activeFilter === "all" ? styles.filterActive : ""}`.trim()}
+            onClick={() => setActiveFilter("all")}
+          >
+            {text.all}
+          </button>
+          <button
+            type="button"
+            className={`${styles.filter} ${activeFilter === "attention" ? styles.filterActive : ""}`.trim()}
+            onClick={() => setActiveFilter("attention")}
+          >
+            {text.attention}
+          </button>
         </div>
       </div>
 
-      <div className="bookshelf-layout">
-        <div className="bookshelf-grid-area">
-          <div className="bookshelf-caption-row">
-            <p className="bookshelf-caption">
-              当前显示 <strong>{formatCount(filteredProjects.length)}</strong> 本作品
-            </p>
-            {deferredSearch ? <p className="bookshelf-caption subtle-text">{`搜索：${deferredSearch}`}</p> : null}
-          </div>
-
-          {filteredProjects.length ? (
-            <div className="bookshelf-grid">
-              {filteredProjects.map((project) => (
-                <article className="bookshelf-book" key={project.work.id}>
-                  <div className="book-head">
-                    <div>
-                      <strong>{project.work.title}</strong>
-                      <p className="book-meta">
-                        {project.work.genre}
-                        {project.work.subgenre ? ` · ${project.work.subgenre}` : ""}
-                        {` · ${project.work.targetPlatform}`}
-                      </p>
-                    </div>
-                    <span className="status-badge">{statusLabelMap[project.work.status] ?? project.work.status}</span>
-                  </div>
-
-                  <p className="book-tagline">{project.work.tagline}</p>
-
-                  <div className="stat-chip-row book-chip-row">
-                    <span className="stat-chip">{`章节 ${formatCount(project.stats.chapterCount)}`}</span>
-                    <span className="stat-chip">{`角色 ${formatCount(project.stats.characterCount)}`}</span>
-                    <span className="stat-chip">{`待处理 ${formatCount(project.stats.pendingReviewCount)}`}</span>
-                  </div>
-
-                  <div className="book-footer">
-                    <p className="book-meta subtle-text">{`最近章节：${project.latestChapterTitle ?? "还没有章节"}`}</p>
-                    <Link className="action-link" href={`/works/${project.work.slug}`}>
-                      打开作品
-                    </Link>
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state compact-state bookshelf-empty">
-              <strong>当前筛选结果为空。</strong>
-              <p>可以试试清空搜索词，或者切回“全部作品”。</p>
-            </div>
-          )}
+      {projects.length === 0 ? (
+        <div className={styles.empty}>
+          <strong>{text.emptyTitle}</strong>
+          <p>{text.emptyCopy}</p>
         </div>
+      ) : filteredProjects.length === 0 ? (
+        <div className={styles.empty}>
+          <p>{text.noResult}</p>
+        </div>
+      ) : (
+        <div className={styles.grid}>
+          {filteredProjects.map((project) => (
+            <Link className={styles.cardLink} href={`/works/${project.work.slug}/overview`} key={project.work.id}>
+              <article className={styles.card} style={buildCardStyle(project)}>
+                <div className={styles.cardShade} />
+                <div className={styles.cardBody}>
+                  <div className={styles.cardTop}>
+                    <span className={styles.status}>{statusLabelMap[project.work.status] || project.work.status}</span>
+                  </div>
 
-        <aside className="bookshelf-side-rail">
-          <article className="focus-card">
-            <div className="section-heading">
-              <p>焦点</p>
-              <h2>{focusProject?.work.title ?? "等待作品焦点"}</h2>
-            </div>
-            {focusProject ? (
-              <>
-                <p className="panel-copy">{focusProject.work.tagline}</p>
-                <div className="stat-chip-row compact-chip-row">
-                  <span className="stat-chip">{`目录源 ${formatCount(focusProject.stats.sourceCount)}`}</span>
-                  <span className="stat-chip">{`待处理 ${formatCount(focusProject.stats.pendingReviewCount)}`}</span>
-                  <span className="stat-chip">{`关系 ${formatCount(focusProject.graph.edges.length)}`}</span>
-                </div>
-                <div className="mini-section">
-                  <strong>当前分卷</strong>
-                  <ul className="mini-list">
-                    {focusVolumes.length ? (
-                      focusVolumes.map((volume) => (
-                        <li key={volume.id}>
-                          <span>{`卷 ${volume.order}`}</span>
-                          <p>{volume.title}</p>
-                        </li>
-                      ))
-                    ) : (
-                      <li>
-                        <p>当前还没有分卷数据。</p>
-                      </li>
-                    )}
-                  </ul>
-                </div>
-                <div className="mini-section">
-                  <strong>最近章节</strong>
-                  <p className="book-meta">{focusChapter?.title ?? "还没有章节"}</p>
-                  <p className="panel-copy compact-copy">
-                    {focusChapter?.summary ?? "先通过自动同步和审查，把章节事实逐步沉淀下来。"}
-                  </p>
-                  <Link className="action-link" href={`/works/${focusProject.work.slug}`}>
-                    继续处理这本书
-                  </Link>
-                </div>
-              </>
-            ) : (
-              <div className="empty-state compact-state">
-                <p>当前还没有可聚焦的作品。</p>
-              </div>
-            )}
-          </article>
-
-          <article className="focus-card">
-            <div className="section-heading">
-              <p>优先处理</p>
-              <h2>优先处理列表</h2>
-            </div>
-            {attentionProjects.length ? (
-              <ul className="attention-list">
-                {attentionProjects.map((project) => (
-                  <li key={project.work.id}>
-                    <div>
-                      <strong>{project.work.title}</strong>
-                      <p className="book-meta subtle-text">
-                        {`待处理 ${formatCount(project.stats.pendingReviewCount)} · 目录源 ${formatCount(project.stats.sourceCount)}`}
-                      </p>
+                  <div className={styles.cardBottom}>
+                    <h2 className={styles.title}>{project.work.title}</h2>
+                    <p className={styles.meta}>
+                      {project.work.genre}
+                      {project.work.subgenre ? ` / ${project.work.subgenre}` : ""}
+                      {` / ${project.work.targetPlatform}`}
+                    </p>
+                    <p className={styles.tagline}>{project.work.tagline}</p>
+                    <div className={styles.chips}>
+                      <span className={styles.chip}>{`${text.chapter} ${project.stats.chapterCount}`}</span>
+                      <span className={styles.chip}>{`${text.pending} ${project.stats.pendingReviewCount}`}</span>
                     </div>
-                    <Link className="ghost-link" href={`/works/${project.work.slug}`}>
-                      进入
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="empty-state compact-state">
-                <p>当前没有高优先级待处理作品，可以继续正常创作。</p>
-              </div>
-            )}
-          </article>
-        </aside>
-      </div>
+                    <p className={styles.latest}>{`${text.latest}：${project.latestChapterTitle || "暂未同步"}`}</p>
+                  </div>
+                </div>
+              </article>
+            </Link>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

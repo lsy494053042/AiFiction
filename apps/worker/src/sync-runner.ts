@@ -72,9 +72,9 @@ function parseArgs(argv: string[]): SyncRunnerOptions {
 function printUsage() {
   console.log("[AiFiction Sync Worker] Usage:");
   console.log("  npm run worker:sync -- --list-projects");
-  console.log("  npm run worker:sync -- --project demo-work-v2 --list-sources");
+  console.log("  npm run worker:sync -- --project your-work-slug --list-sources");
   console.log(
-    "  npm run worker:sync -- --project demo-work-v2 --root storage/sync-smoke/demo-work-v2 --chapters chapters --outline outline",
+    "  npm run worker:sync -- --project your-work-slug --root books/你的作品名 --chapters chapters --outline outline",
   );
   console.log("  npm run worker:sync -- --source-id <file-source-id>");
 }

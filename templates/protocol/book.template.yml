@@ -1,0 +1,60 @@
+book_id: your-book-id
+title: 你的作品名
+genre: 待定
+platform: 待定
+stage: planning
+status: active
+
+evaluation_policy:
+  use_workspace_stop_loss_rule: true
+  override_stop_loss_word_count:
+
+active_volume: 1
+active_chapter: 1
+
+paths:
+  root_dir: .
+  settings_dir: 00-设定
+  outlines_dir: 01-大纲
+  chapters_dir: 02-正文
+  artifacts_dir: 03-中间产物
+
+source_of_truth:
+  project_brief: 00-设定/作品定位.md
+  world_settings: 00-设定/世界设定.md
+  character_settings: 00-设定/角色设定.md
+  master_outline: 01-大纲/全书大纲.md
+  active_volume_outline: 01-大纲/卷一大纲.md
+
+current_focus:
+  task_type: planning
+  task_label: 确定作品方向
+  goal: 明确作品定位、核心设定和卷一方向
+  summary: 先和 Codex 把这本书的题材、卖点、角色与开篇方向定下来。
+
+hard_constraints: []
+
+last_outputs:
+  latest_chapter_file: 02-正文/0001.md
+  latest_summary_file: 03-中间产物/latest-summary.md
+  latest_review_file: 03-中间产物/latest-review.md
+  latest_sync_source: 02-正文/0001.md
+
+sync:
+  auto_sync_enabled: true
+  root_source: 02-正文
+  include_patterns:
+    - "*.md"
+    - "*.txt"
+  exclude_patterns:
+    - ".git/**"
+    - "node_modules/**"
+    - "dist/**"
+
+proposal_commit:
+  auto_commit_low_risk: true
+  require_manual_commit_for:
+    - factual-conflict
+    - timeline-conflict
+    - major-relationship-shift
+    - rule-break

@@ -1,82 +1,165 @@
+﻿"use client";
+
+import { useEffect, useId, useState } from "react";
+
 import { createWorkAction } from "../app/workbench-actions";
+import styles from "./create-work-section.module.css";
 
-export function CreateWorkSection() {
+interface CreateWorkSectionProps {
+  triggerLabel?: string;
+}
+
+const text = {
+  trigger: "+ 新建作品",
+  title: "先把这本书建起来",
+  copy: "先填书名、题材、平台和一句话卖点。正文、大纲和设定，进作品页再继续补。",
+  close: "关闭",
+  titleLabel: "作品标题",
+  titlePlaceholder: "例如：末站执灯人",
+  genreLabel: "主类型",
+  genrePlaceholder: "玄幻 / 都市 / 悬疑",
+  platformLabel: "目标平台",
+  platformPlaceholder: "起点中文网 / 番茄小说",
+  taglineLabel: "一句话卖点",
+  taglinePlaceholder: "一句话说清这本书为什么值得追下去",
+  advanced: "补充高级信息",
+  slugLabel: "slug",
+  slugPlaceholder: "不填则自动生成",
+  subgenreLabel: "副类型",
+  subgenrePlaceholder: "规则怪谈 / 废土悬疑 / 群像",
+  targetWordCountLabel: "目标字数",
+  dailyWordTargetLabel: "日更目标",
+  cadenceLabel: "更新节奏",
+  cadenceValue: "日更",
+  audienceLabel: "目标读者",
+  audiencePlaceholder: "一行一个，或用逗号分隔",
+  hooksLabel: "商业卖点",
+  hooksPlaceholder: "一行一个，例如成长、博弈、悬疑、废土感",
+  constraintsLabel: "硬约束",
+  constraintsPlaceholder: "一行一个，例如主角不能无代价越阶",
+  submit: "创建作品并进入作品页",
+};
+
+export function CreateWorkSection({ triggerLabel = text.trigger }: CreateWorkSectionProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const titleId = useId();
+  const descriptionId = useId();
+
+  useEffect(() => {
+    if (!isOpen) {
+      return undefined;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = "";
+    };
+  }, [isOpen]);
+
   return (
-    <section className="content-card" id="quick-create">
-      <div className="section-heading">
-        <p>快速创建</p>
-        <h2>先建作品壳，再让系统逐步接手维护</h2>
-      </div>
-      <p className="panel-copy">
-        首页只保留最少必填项。受众、约束、商业卖点这些信息可以等作品建立后再逐步补充。
-      </p>
+    <>
+      <button type="button" className={styles.trigger} onClick={() => setIsOpen(true)}>
+        {triggerLabel}
+      </button>
 
-      <form action={createWorkAction} className="editor-form-grid compact-form-grid">
-        <label className="field-block field-block-wide">
-          <span>作品标题</span>
-          <input name="title" placeholder="例如：长夜取火" required />
-        </label>
-        <label className="field-block">
-          <span>主类型</span>
-          <input name="genre" placeholder="玄幻 / 都市 / 仙侠" required />
-        </label>
-        <label className="field-block">
-          <span>目标平台</span>
-          <input name="targetPlatform" placeholder="起点中文网" required />
-        </label>
-        <label className="field-block field-block-wide">
-          <span>一句话卖点</span>
-          <textarea name="tagline" rows={2} placeholder="一句话说明这本书真正的核心钩子" required />
-        </label>
-
-        <div className="field-block-wide">
-          <details className="manual-details quick-create-details">
-            <summary>补充高级信息</summary>
-            <div className="quick-create-advanced-grid">
-              <label className="field-block">
-                <span>手动 slug</span>
-                <input name="slug" placeholder="可不填，系统会自动生成" />
-              </label>
-              <label className="field-block">
-                <span>副类型</span>
-                <input name="subgenre" placeholder="群像成长 / 系统流 / 种田流" />
-              </label>
-              <label className="field-block">
-                <span>目标字数</span>
-                <input name="targetWordCount" type="number" min={1000} defaultValue={1200000} />
-              </label>
-              <label className="field-block">
-                <span>日更目标</span>
-                <input name="dailyWordTarget" type="number" min={0} defaultValue={4000} />
-              </label>
-              <label className="field-block field-block-wide">
-                <span>更新节奏</span>
-                <input name="updateCadence" defaultValue="日更" />
-              </label>
-              <label className="field-block field-block-wide">
-                <span>目标读者</span>
-                <textarea name="targetAudience" rows={2} placeholder="一行一个，或用逗号分隔" />
-              </label>
-              <label className="field-block field-block-wide">
-                <span>商业卖点</span>
-                <textarea name="commercialHooks" rows={2} placeholder="一行一个，例如升级体系、势力博弈、边境求生" />
-              </label>
-              <label className="field-block field-block-wide">
-                <span>硬约束</span>
-                <textarea name="hardConstraints" rows={2} placeholder="一行一个，例如主角不能无代价越阶" />
-              </label>
-              <label className="field-block field-block-wide">
-                <span>内容边界提示</span>
-                <textarea name="contentWarnings" rows={2} placeholder="一行一个，例如黑暗世界观、战争描写" />
-              </label>
+      {isOpen ? (
+        <div
+          className={styles.backdrop}
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setIsOpen(false);
+            }
+          }}
+        >
+          <section className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId}>
+            <div className={styles.header}>
+              <div className={styles.headerText}>
+                <h2 className={styles.title} id={titleId}>{text.title}</h2>
+                <p className={styles.copy} id={descriptionId}>{text.copy}</p>
+              </div>
+              <button type="button" className={styles.close} onClick={() => setIsOpen(false)} aria-label={text.close}>
+                {text.close}
+              </button>
             </div>
-          </details>
-        </div>
 
-        <div className="form-action-row field-block-wide">
-          <button type="submit">创建作品并进入详情页</button>
+            <form action={createWorkAction} className={styles.form}>
+              <div className={styles.grid}>
+                <label className={`${styles.field} ${styles.full}`}>
+                  <span>{text.titleLabel}</span>
+                  <input name="title" placeholder={text.titlePlaceholder} required />
+                </label>
+
+                <label className={styles.field}>
+                  <span>{text.genreLabel}</span>
+                  <input name="genre" placeholder={text.genrePlaceholder} required />
+                </label>
+
+                <label className={styles.field}>
+                  <span>{text.platformLabel}</span>
+                  <input name="targetPlatform" placeholder={text.platformPlaceholder} required />
+                </label>
+
+                <label className={`${styles.field} ${styles.full}`}>
+                  <span>{text.taglineLabel}</span>
+                  <textarea name="tagline" rows={3} placeholder={text.taglinePlaceholder} required />
+                </label>
+              </div>
+
+              <details className={styles.advanced}>
+                <summary>{text.advanced}</summary>
+                <div className={styles.advancedContent}>
+                  <label className={styles.field}>
+                    <span>{text.slugLabel}</span>
+                    <input name="slug" placeholder={text.slugPlaceholder} />
+                  </label>
+                  <label className={styles.field}>
+                    <span>{text.subgenreLabel}</span>
+                    <input name="subgenre" placeholder={text.subgenrePlaceholder} />
+                  </label>
+                  <label className={styles.field}>
+                    <span>{text.targetWordCountLabel}</span>
+                    <input name="targetWordCount" type="number" min={1000} defaultValue={1000000} />
+                  </label>
+                  <label className={styles.field}>
+                    <span>{text.dailyWordTargetLabel}</span>
+                    <input name="dailyWordTarget" type="number" min={0} defaultValue={4000} />
+                  </label>
+                  <label className={`${styles.field} ${styles.full}`}>
+                    <span>{text.cadenceLabel}</span>
+                    <input name="updateCadence" defaultValue={text.cadenceValue} />
+                  </label>
+                  <label className={`${styles.field} ${styles.full}`}>
+                    <span>{text.audienceLabel}</span>
+                    <textarea name="targetAudience" rows={2} placeholder={text.audiencePlaceholder} />
+                  </label>
+                  <label className={`${styles.field} ${styles.full}`}>
+                    <span>{text.hooksLabel}</span>
+                    <textarea name="commercialHooks" rows={2} placeholder={text.hooksPlaceholder} />
+                  </label>
+                  <label className={`${styles.field} ${styles.full}`}>
+                    <span>{text.constraintsLabel}</span>
+                    <textarea name="hardConstraints" rows={2} placeholder={text.constraintsPlaceholder} />
+                  </label>
+                </div>
+              </details>
+
+              <div className={styles.actions}>
+                <button type="submit" className={styles.submit}>{text.submit}</button>
+              </div>
+            </form>
+          </section>
         </div>
-      </form>
-    </section>
+      ) : null}
+    </>
   );
 }

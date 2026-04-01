@@ -19,3 +19,4 @@ storage/exports/generated/
 storage/sync-smoke/
 storage/tmp/
 config/machine-overrides.local.json
+books/.gitkeep

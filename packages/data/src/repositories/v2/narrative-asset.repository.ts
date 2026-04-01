@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+﻿import { and, asc, eq, inArray } from "drizzle-orm";
 
 import type { ChapterCard, CharacterCard, ForeshadowLedgerItem, TimelineEvent, VolumeOutline } from "@aifiction/schemas";
 
@@ -25,7 +25,9 @@ function buildSceneId(chapterId: string, index: number): string {
 }
 
 /**
- * SQLite 娑撳娈?V2 閸欐瑤绨ㄧ挧鍕獓娴犳挸鍋嶉妴? * 鐠愮喕鐭楃憴鎺曞閵嗕礁宓庣痪灞傗偓浣虹彿閸椔扳偓浣风础缁楁梻鐡戞担婊冩惂閸愬懎顔愮挧鍕獓閻ㄥ嫮绮ㄩ弸鍕鐠囪鍟撻妴? */
+ * SQLite V2 叙事资产仓储。
+ * 负责角色、分卷、章节、伏笔和时间线等结构化资产的持久化与读取。
+ */
 export class SqliteNarrativeAssetRepository implements NarrativeAssetRepository {
   constructor(private readonly client: SqliteClient = getSqliteClient()) {}
 
@@ -522,3 +524,4 @@ export class SqliteNarrativeAssetRepository implements NarrativeAssetRepository 
     });
   }
 }
+

@@ -1,4 +1,4 @@
-export * from "./bootstrap";
+﻿export * from "./bootstrap";
 export * from "./client";
 export * from "./schema";
 export * from "./repositories/novel-project.repository";
@@ -8,3 +8,4 @@ export * from "./foundation/base-columns";
 export * from "./v2";
 export * from "./workbench";
 export * from "./sync";
+export * from "./protocol";

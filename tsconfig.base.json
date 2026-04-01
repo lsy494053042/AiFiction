@@ -7,21 +7,6 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "forceConsistentCasingInFileNames": true,
-    "baseUrl": ".",
-    "paths": {
-      "@aifiction/data": [
-        "packages/data/src/index.ts"
-      ],
-      "@aifiction/schemas": [
-        "packages/schemas/src/index.ts"
-      ],
-      "@aifiction/core": [
-        "packages/core/src/index.ts"
-      ],
-      "@aifiction/prompts": [
-        "packages/prompts/src/index.ts"
-      ]
-    }
+    "forceConsistentCasingInFileNames": true
   }
 }

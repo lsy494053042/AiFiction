@@ -1,4 +1,4 @@
-"use server";
+﻿"use server";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -28,6 +28,17 @@ function readReviewIdList(formData: FormData, field = "reviewIds"): string[] {
     .filter(Boolean);
 }
 
+function buildWorkViewHref(workSlug: string, view?: string): string {
+  const targetView = view && view !== "overview" ? view : "overview";
+  return `/works/${encodeURIComponent(workSlug)}/${targetView}`;
+}
+
+function revalidateWorkPaths(workSlug: string, view?: string) {
+  revalidatePath("/");
+  revalidatePath(`/works/${workSlug}`);
+  revalidatePath(buildWorkViewHref(workSlug, view));
+}
+
 async function decideReviewIds(input: {
   reviewIds: string[];
   decision: "approved" | "rejected";
@@ -42,12 +53,9 @@ async function decideReviewIds(input: {
   }
 }
 
-function buildWorkViewHref(workSlug: string, view?: string): string {
-  return view && view !== "overview" ? `/works/${workSlug}?view=${view}` : `/works/${workSlug}`;
-}
-
 export async function bindWorkSourceAction(formData: FormData) {
   const workSlug = readRequiredText(formData, "workSlug", "作品 slug");
+  const returnView = readOptionalText(formData, "returnView") ?? "settings";
 
   const fileSource = await syncService.bindProjectFileSource({
     projectId: readRequiredText(formData, "workId", "作品 ID"),
@@ -62,26 +70,26 @@ export async function bindWorkSourceAction(formData: FormData) {
 
   await syncService.scanFileSource(fileSource.id, "manual-web-bind");
 
-  revalidatePath("/");
-  revalidatePath(`/works/${workSlug}`);
-  redirect(`/works/${workSlug}`);
+  revalidateWorkPaths(workSlug, returnView);
+  redirect(buildWorkViewHref(workSlug, returnView));
 }
 
 export async function rescanWorkSourceAction(formData: FormData) {
   const workSlug = readRequiredText(formData, "workSlug", "作品 slug");
   const fileSourceId = readRequiredText(formData, "fileSourceId", "目录源 ID");
+  const returnView = readOptionalText(formData, "returnView") ?? "settings";
 
   await syncService.scanFileSource(fileSourceId, "manual-web-rescan");
 
-  revalidatePath("/");
-  revalidatePath(`/works/${workSlug}`);
-  redirect(`/works/${workSlug}`);
+  revalidateWorkPaths(workSlug, returnView);
+  redirect(buildWorkViewHref(workSlug, returnView));
 }
 
 export async function decideReviewAction(formData: FormData) {
   const workSlug = readRequiredText(formData, "workSlug", "作品 slug");
   const reviewId = readRequiredText(formData, "reviewId", "审查项 ID");
   const decision = readRequiredText(formData, "decision", "审查决定");
+  const returnView = readOptionalText(formData, "returnView") ?? "issues";
 
   if (decision !== "approved" && decision !== "rejected") {
     throw new Error("不支持的审查决定。");
@@ -93,15 +101,15 @@ export async function decideReviewAction(formData: FormData) {
     decisionNote: readOptionalText(formData, "decisionNote"),
   });
 
-  revalidatePath("/");
-  revalidatePath(`/works/${workSlug}`);
-  redirect(`/works/${workSlug}`);
+  revalidateWorkPaths(workSlug, returnView);
+  redirect(buildWorkViewHref(workSlug, returnView));
 }
 
 export async function decideReviewBundleAction(formData: FormData) {
   const workSlug = readRequiredText(formData, "workSlug", "作品 slug");
   const decision = readRequiredText(formData, "decision", "审查决定");
   const reviewIds = readReviewIdList(formData);
+  const returnView = readOptionalText(formData, "returnView") ?? "issues";
 
   if (!reviewIds.length) {
     throw new Error("没有收到可处理的审查项 ID。");
@@ -116,28 +124,28 @@ export async function decideReviewBundleAction(formData: FormData) {
     decisionNote: readOptionalText(formData, "decisionNote"),
   });
 
-  revalidatePath("/");
-  revalidatePath(`/works/${workSlug}`);
-  redirect(`/works/${workSlug}`);
+  revalidateWorkPaths(workSlug, returnView);
+  redirect(buildWorkViewHref(workSlug, returnView));
 }
 
 export async function autoRouteProjectReviewsAction(formData: FormData) {
   const workSlug = readRequiredText(formData, "workSlug", "作品 slug");
   const workId = readRequiredText(formData, "workId", "作品 ID");
+  const returnView = readOptionalText(formData, "returnView") ?? "issues";
 
   await reviewQueueService.autoRouteProjectReviewItems({
     projectId: workId,
     decisionNote: readOptionalText(formData, "decisionNote") ?? "系统已自动分流当前待处理项，并自动通过低风险部分。",
   });
 
-  revalidatePath("/");
-  revalidatePath(`/works/${workSlug}`);
-  redirect(`/works/${workSlug}?view=reviews`);
+  revalidateWorkPaths(workSlug, returnView);
+  redirect(buildWorkViewHref(workSlug, returnView));
 }
 
 export async function autoApproveLowRiskBundlesAction(formData: FormData) {
   const workSlug = readRequiredText(formData, "workSlug", "作品 slug");
   const reviewIds = readReviewIdList(formData);
+  const returnView = readOptionalText(formData, "returnView") ?? "issues";
 
   if (!reviewIds.length) {
     throw new Error("没有收到可自动通过的审查项 ID。");
@@ -145,26 +153,26 @@ export async function autoApproveLowRiskBundlesAction(formData: FormData) {
 
   await reviewQueueService.autoApproveReviewItems({
     reviewIds,
-    decisionNote: readOptionalText(formData, "decisionNote") ?? "系统已自动通过低风险变更包。",
+    decisionNote: readOptionalText(formData, "decisionNote") ?? "系统已自动通过低风险变更。",
   });
 
-  revalidatePath("/");
-  revalidatePath(`/works/${workSlug}`);
-  redirect(`/works/${workSlug}`);
+  revalidateWorkPaths(workSlug, returnView);
+  redirect(buildWorkViewHref(workSlug, returnView));
 }
+
 export async function updateFollowUpTaskAction(formData: FormData) {
-  const workSlug = readRequiredText(formData, "workSlug", "work slug");
-  const workId = readRequiredText(formData, "workId", "work ID");
-  const chapterId = readRequiredText(formData, "chapterId", "chapter ID");
-  const taskKind = readRequiredText(formData, "taskKind", "task kind");
-  const taskFingerprint = readRequiredText(formData, "taskFingerprint", "task fingerprint");
+  const workSlug = readRequiredText(formData, "workSlug", "作品 slug");
+  const workId = readRequiredText(formData, "workId", "作品 ID");
+  const chapterId = readRequiredText(formData, "chapterId", "章节 ID");
+  const taskKind = readRequiredText(formData, "taskKind", "任务类型");
+  const taskFingerprint = readRequiredText(formData, "taskFingerprint", "任务指纹");
   const taskResult = readOptionalText(formData, "taskResult");
   const explicitTaskStatus = readOptionalText(formData, "taskStatus");
   const explicitTaskOutcome = readOptionalText(formData, "taskOutcome");
-  const returnView = readOptionalText(formData, "returnView") ?? "overview";
+  const returnView = readOptionalText(formData, "returnView") ?? "issues";
 
   if (taskKind !== "formal-review") {
-    throw new Error("Unsupported follow-up task kind.");
+    throw new Error("暂不支持这个复核任务类型。");
   }
 
   const [resultStatus, resultOutcome] = taskResult ? taskResult.split(":", 2) : [];
@@ -172,7 +180,7 @@ export async function updateFollowUpTaskAction(formData: FormData) {
   const taskOutcome = explicitTaskOutcome ?? resultOutcome ?? undefined;
 
   if (!["pending", "in_review", "completed", "dismissed"].includes(taskStatus)) {
-    throw new Error("Unsupported follow-up task status.");
+    throw new Error("不支持的任务状态。");
   }
 
   await reviewQueueService.updateFollowUpTaskState({
@@ -186,8 +194,6 @@ export async function updateFollowUpTaskAction(formData: FormData) {
     decisionNote: readOptionalText(formData, "decisionNote"),
   });
 
-  revalidatePath("/");
-  revalidatePath(`/works/${workSlug}`);
+  revalidateWorkPaths(workSlug, returnView);
   redirect(buildWorkViewHref(workSlug, returnView));
 }
-

@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 
 import { asc, eq } from "drizzle-orm";
 
@@ -20,6 +22,7 @@ import {
   type SyncFileSourceRecord,
   type SyncFollowUpTaskStateRecord,
   type SyncReviewQueueRecord,
+  type SyncSourceDocumentRecord,
   type SyncSourceRefRecord,
   SqliteSyncSourceRepository,
   SqliteSyncWorkflowRepository,
@@ -242,6 +245,29 @@ export interface WorkbenchProjectSnapshot {
   reviewStats: WorkbenchReviewStats;
 }
 
+export interface WorkbenchDocumentWorkspaceItem {
+  id: string;
+  title: string;
+  subtitle: string;
+  relativePath: string;
+  documentKind: string;
+  lastModifiedAt: string;
+  syncStatus: string;
+  mappedScopeType?: string;
+  mappedScopeId?: string;
+}
+
+export interface WorkbenchDocumentWorkspace {
+  kind: "chapter" | "outline";
+  items: WorkbenchDocumentWorkspaceItem[];
+  selectedDocumentId?: string;
+  selectedDocumentTitle?: string;
+  selectedRelativePath?: string;
+  selectedMappedScopeId?: string;
+  selectedContent: string;
+  emptyMessage: string;
+}
+
 export class NovelWorkbenchService {
   private readonly projectCatalogRepository: SqliteProjectCatalogRepository;
   private readonly narrativeAssetRepository: SqliteNarrativeAssetRepository;
@@ -378,6 +404,78 @@ export class NovelWorkbenchService {
       followUpQueue,
       pendingReviews,
       reviewStats,
+    };
+  }
+
+  async getProjectDocumentWorkspaceBySlug(
+    slug: string,
+    documentKind: "chapter" | "outline",
+    selectedDocumentId?: string,
+  ): Promise<WorkbenchDocumentWorkspace | null> {
+    await ensureSqliteV2Bootstrap(this.client);
+
+    const work = await this.projectCatalogRepository.getProjectBySlug(slug);
+    if (!work) {
+      return null;
+    }
+
+    const [fileSources, chapters, volumes] = await Promise.all([
+      this.syncSourceRepository.listFileSources(work.id),
+      this.narrativeAssetRepository.listChapters(work.id),
+      this.listVolumes(work.id),
+    ]);
+
+    const chapterById = new Map(chapters.map((chapter) => [chapter.id, chapter]));
+    const volumeById = new Map(volumes.map((volume) => [volume.id, volume]));
+    const sourceDocumentEntries: Array<{ fileSource: SyncFileSourceRecord; sourceDocument: SyncSourceDocumentRecord }> = [];
+
+    for (const fileSource of fileSources) {
+      const sourceDocuments = await this.syncSourceRepository.listSourceDocuments(fileSource.id);
+      for (const sourceDocument of sourceDocuments) {
+        if (sourceDocument.documentKind === documentKind) {
+          sourceDocumentEntries.push({ fileSource, sourceDocument });
+        }
+      }
+    }
+
+    const sortedEntries = this.sortReadableDocuments(sourceDocumentEntries, chapterById, volumeById);
+    const items = sortedEntries.map(({ sourceDocument }) =>
+      this.createDocumentWorkspaceItem(sourceDocument, chapterById, volumeById),
+    );
+
+    if (!sortedEntries.length) {
+      return {
+        kind: documentKind,
+        items: [],
+        selectedContent: "",
+        emptyMessage: documentKind === "chapter"
+          ? "\u8fd8\u6ca1\u6709\u53ef\u4ee5\u76f4\u63a5\u9605\u8bfb\u7684\u6b63\u6587\u7ae0\u8282\u3002"
+          : "\u8fd8\u6ca1\u6709\u53ef\u4ee5\u76f4\u63a5\u67e5\u770b\u7684\u5927\u7eb2\u6587\u4ef6\u3002",
+      };
+    }
+
+    const selectedEntry =
+      sortedEntries.find(({ sourceDocument }) => sourceDocument.id === selectedDocumentId)
+      ?? (documentKind === "chapter" ? sortedEntries.at(-1) : sortedEntries[0]);
+
+    if (!selectedEntry) {
+      return {
+        kind: documentKind,
+        items,
+        selectedContent: "",
+        emptyMessage: "\u6682\u65f6\u65e0\u6cd5\u8bfb\u53d6\u5f53\u524d\u6587\u6863\u3002",
+      };
+    }
+
+    return {
+      kind: documentKind,
+      items,
+      selectedDocumentId: selectedEntry.sourceDocument.id,
+      selectedDocumentTitle: this.buildReadableDocumentTitle(selectedEntry.sourceDocument, chapterById, volumeById),
+      selectedRelativePath: selectedEntry.sourceDocument.relativePath,
+      selectedMappedScopeId: selectedEntry.sourceDocument.mappedScopeId,
+      selectedContent: this.readSourceDocumentContent(selectedEntry.fileSource, selectedEntry.sourceDocument),
+      emptyMessage: "",
     };
   }
 
@@ -1129,5 +1227,102 @@ export class NovelWorkbenchService {
       sourceCount: 0,
       pendingReviewCount: 0,
     };
+  }
+
+  private sortReadableDocuments(
+    entries: Array<{ fileSource: SyncFileSourceRecord; sourceDocument: SyncSourceDocumentRecord }>,
+    chapterById: Map<string, ChapterCard>,
+    volumeById: Map<string, VolumeOutline>,
+  ): Array<{ fileSource: SyncFileSourceRecord; sourceDocument: SyncSourceDocumentRecord }> {
+    return [...entries].sort((left, right) => {
+      const leftChapter = left.sourceDocument.mappedScopeId ? chapterById.get(left.sourceDocument.mappedScopeId) : undefined;
+      const rightChapter = right.sourceDocument.mappedScopeId ? chapterById.get(right.sourceDocument.mappedScopeId) : undefined;
+      if (leftChapter && rightChapter) {
+        return leftChapter.order - rightChapter.order;
+      }
+
+      const leftVolume = left.sourceDocument.mappedScopeId ? volumeById.get(left.sourceDocument.mappedScopeId) : undefined;
+      const rightVolume = right.sourceDocument.mappedScopeId ? volumeById.get(right.sourceDocument.mappedScopeId) : undefined;
+      if (leftVolume && rightVolume) {
+        return leftVolume.order - rightVolume.order;
+      }
+
+      return left.sourceDocument.relativePath.localeCompare(right.sourceDocument.relativePath, "zh-CN");
+    });
+  }
+
+  private createDocumentWorkspaceItem(
+    sourceDocument: SyncSourceDocumentRecord,
+    chapterById: Map<string, ChapterCard>,
+    volumeById: Map<string, VolumeOutline>,
+  ): WorkbenchDocumentWorkspaceItem {
+    const chapter = sourceDocument.mappedScopeId ? chapterById.get(sourceDocument.mappedScopeId) : undefined;
+    const volume = sourceDocument.mappedScopeId ? volumeById.get(sourceDocument.mappedScopeId) : undefined;
+
+    return {
+      id: sourceDocument.id,
+      title: this.buildReadableDocumentTitle(sourceDocument, chapterById, volumeById),
+      subtitle: chapter
+        ? `\u7b2c ${chapter.order} \u7ae0`
+        : volume
+          ? `\u5377 ${volume.order}`
+          : sourceDocument.relativePath,
+      relativePath: sourceDocument.relativePath,
+      documentKind: sourceDocument.documentKind,
+      lastModifiedAt: sourceDocument.lastModifiedAt,
+      syncStatus: sourceDocument.syncStatus,
+      mappedScopeType: sourceDocument.mappedScopeType,
+      mappedScopeId: sourceDocument.mappedScopeId,
+    };
+  }
+
+  private buildReadableDocumentTitle(
+    sourceDocument: SyncSourceDocumentRecord,
+    chapterById: Map<string, ChapterCard>,
+    volumeById: Map<string, VolumeOutline>,
+  ): string {
+    const chapter = sourceDocument.mappedScopeId ? chapterById.get(sourceDocument.mappedScopeId) : undefined;
+    if (chapter) {
+      return chapter.title;
+    }
+
+    const volume = sourceDocument.mappedScopeId ? volumeById.get(sourceDocument.mappedScopeId) : undefined;
+    if (volume) {
+      return volume.title;
+    }
+
+    return path.basename(sourceDocument.relativePath, path.extname(sourceDocument.relativePath));
+  }
+
+  private readSourceDocumentContent(fileSource: SyncFileSourceRecord, sourceDocument: SyncSourceDocumentRecord): string {
+    const basePath = this.resolveDocumentBasePath(fileSource, sourceDocument.documentKind);
+    if (!basePath) {
+      return "\u5f53\u524d\u6587\u6863\u8fd8\u6ca1\u6709\u53ef\u7528\u7684\u76ee\u5f55\u6620\u5c04\u3002";
+    }
+
+    const absolutePath = path.join(basePath, sourceDocument.relativePath);
+    if (!fs.existsSync(absolutePath)) {
+      return "\u5f53\u524d\u8fd8\u8bfb\u4e0d\u5230\u8fd9\u4efd\u6b63\u6587\u6216\u5927\u7eb2\u5185\u5bb9\u3002";
+    }
+
+    const extension = path.extname(absolutePath).toLowerCase();
+    if (extension !== ".md" && extension !== ".txt") {
+      return "\u8fd9\u4efd\u6587\u6863\u76ee\u524d\u53ea\u8bb0\u5f55\u5728\u5de5\u4f5c\u53f0\u91cc\uff0c\u8fd8\u6ca1\u6709\u5f00\u542f\u76f4\u63a5\u9605\u8bfb\u9884\u89c8\u3002";
+    }
+
+    return fs.readFileSync(absolutePath, "utf8").replace(/\r\n/g, "\n");
+  }
+
+  private resolveDocumentBasePath(fileSource: SyncFileSourceRecord, documentKind: string): string | undefined {
+    switch (documentKind) {
+      case "chapter":
+        return fileSource.chapterPath ?? fileSource.rootPath;
+      case "outline":
+        return fileSource.outlinePath ?? fileSource.rootPath;
+      case "export":
+        return fileSource.exportPath ?? fileSource.rootPath;
+      default:
+        return fileSource.rootPath;
+    }
   }
 }

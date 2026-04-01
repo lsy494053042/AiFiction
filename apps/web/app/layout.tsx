@@ -1,9 +1,9 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "AiFiction",
-  description: "个人长篇网文流水线工作台",
+  description: "个人长篇小说工作台",
 };
 
 export default function RootLayout({

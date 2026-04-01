@@ -24,7 +24,9 @@
     "worker:sync": "npm --workspace @aifiction/worker run sync --",
     "db:workbench-smoke": "npm --workspace @aifiction/data run db:workbench-smoke",
     "machine:context": "node scripts/machine-context.mjs",
-    "encoding:check": "node scripts/encoding-check.mjs"
+    "encoding:check": "node scripts/encoding-check.mjs",
+    "db:protocol-smoke": "npm --workspace @aifiction/data run db:protocol-smoke",
+    "writing:meta-check": "node scripts/writing-meta-check.mjs"
   },
   "overrides": {
     "react": "18.2.0",

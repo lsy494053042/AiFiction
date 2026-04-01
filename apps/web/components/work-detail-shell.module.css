@@ -1,0 +1,379 @@
+﻿.shell {
+  width: min(1360px, calc(100% - 56px));
+  margin: 0 auto;
+  padding: 24px 0 48px;
+  display: grid;
+  gap: 18px;
+}
+
+.topbar {
+  display: grid;
+  gap: 12px;
+}
+
+.topbarMeta,
+.tabRail,
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.topbarMeta {
+  align-items: center;
+}
+
+.titleBlock {
+  display: grid;
+  gap: 6px;
+}
+
+.backLink,
+.stagePill,
+.tabLink,
+.inlineChip,
+.issueTone,
+.treeCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line-soft);
+  background: rgba(255, 253, 248, 0.9);
+  color: var(--text-subtle);
+  text-decoration: none;
+  font-size: var(--font-button);
+  font-weight: 700;
+}
+
+.stagePill,
+.inlineChip,
+.issueTone,
+.treeCount {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: var(--font-chip);
+}
+
+.pageTitle {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 32px;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+}
+
+.pageMeta,
+.sectionCopy,
+.infoText,
+.emptyText,
+.readerSource,
+.treeItemMeta,
+.issueSource {
+  margin: 0;
+  color: var(--text-subtle);
+  font-size: var(--font-body);
+  line-height: 1.68;
+}
+
+.tabRail {
+  padding-top: 4px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.tabLink {
+  min-height: 38px;
+  padding: 0 16px;
+}
+
+.tabLinkActive {
+  background: var(--bg-muted);
+  color: var(--accent-strong);
+  border-color: rgba(154, 90, 43, 0.16);
+}
+
+.overviewGrid,
+.issueGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.panel {
+  border: 1px solid var(--line-soft);
+  border-radius: 24px;
+  background: rgba(255, 253, 248, 0.94);
+  box-shadow: var(--shadow-soft);
+  padding: 20px;
+}
+
+.sectionLabel,
+.metricLabel,
+.treeGroupTitle,
+.treeRoot,
+.compareLabel {
+  color: var(--accent);
+  font-size: var(--font-chip);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sectionTitle,
+.readerTitle {
+  margin: 0;
+  color: var(--text-main);
+  font-size: var(--font-h2);
+  line-height: 1.25;
+}
+
+.metricGrid,
+.infoList,
+.characterGrid,
+.chipRow {
+  display: grid;
+  gap: 12px;
+}
+
+.metricGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.metricCard,
+.infoItem,
+.issueCard,
+.characterCard,
+.compareCard {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 18px;
+  background: rgba(255, 253, 248, 0.88);
+}
+
+.metricValue,
+.infoTitle,
+.treeItemTitle {
+  color: var(--text-main);
+  font-size: var(--font-body);
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.workspaceGrid {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.treePanel {
+  position: sticky;
+  top: 20px;
+  align-self: start;
+  display: grid;
+  gap: 18px;
+}
+
+.treeHeader {
+  display: grid;
+  gap: 6px;
+}
+
+.treeGroup {
+  display: grid;
+  gap: 10px;
+}
+
+.treeGroupHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.treeList {
+  display: grid;
+  gap: 6px;
+  margin-left: 8px;
+  padding-left: 18px;
+  border-left: 1px solid rgba(74, 52, 32, 0.12);
+}
+
+.treeItem {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  text-decoration: none;
+  background: transparent;
+}
+
+.treeItem::before {
+  content: "";
+  position: absolute;
+  left: -18px;
+  top: 18px;
+  width: 12px;
+  height: 1px;
+  background: rgba(74, 52, 32, 0.12);
+}
+
+.treeItemActive {
+  background: var(--bg-muted);
+  border-color: rgba(154, 90, 43, 0.14);
+}
+
+.readerPanel {
+  display: grid;
+  gap: 16px;
+}
+
+.readerHead {
+  display: grid;
+  gap: 6px;
+}
+
+.readerStage {
+  min-height: 760px;
+  border: 1px solid rgba(74, 52, 32, 0.08);
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 253, 248, 0.9) 0%, rgba(250, 247, 240, 0.98) 100%);
+}
+
+.readerScroll,
+.readerRich {
+  padding: 28px;
+}
+
+.readerArticle,
+.readerRich {
+  width: min(100%, 820px);
+  margin: 0 auto;
+}
+
+.readerRich {
+  display: grid;
+  gap: 12px;
+}
+
+.readerArticle pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.94;
+}
+
+.characterGrid {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.characterCard {
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: flex-start;
+}
+
+.avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: rgba(227, 220, 244, 0.9);
+  color: #5e5bc7;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.characterText {
+  display: grid;
+  gap: 8px;
+}
+
+.issueGrid {
+  grid-template-columns: 320px minmax(0, 1fr);
+}
+
+.issueList,
+.issueDetail {
+  display: grid;
+  gap: 14px;
+}
+
+.issueCardActive {
+  border-color: rgba(154, 90, 43, 0.18);
+  background: rgba(246, 239, 228, 0.96);
+}
+
+.issueCardTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.compareGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.compareWarn {
+  border-color: rgba(206, 106, 89, 0.24);
+  background: rgba(255, 244, 240, 0.96);
+}
+
+.emptyText {
+  color: var(--text-subtle);
+}
+
+@media (max-width: 1180px) {
+  .overviewGrid,
+  .issueGrid,
+  .workspaceGrid,
+  .compareGrid,
+  .metricGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .treePanel {
+    position: static;
+  }
+}
+
+@media (max-width: 860px) {
+  .shell {
+    width: min(100%, calc(100% - 24px));
+    padding-top: 18px;
+    padding-bottom: 36px;
+  }
+
+  .pageTitle {
+    font-size: 28px;
+  }
+
+  .panel {
+    padding: 18px;
+    border-radius: 22px;
+  }
+
+  .characterGrid,
+  .characterCard,
+  .compareGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .readerScroll,
+  .readerRich {
+    padding: 18px;
+  }
+}

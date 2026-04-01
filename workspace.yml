@@ -1,0 +1,40 @@
+workspace_id: aifiction-workspace
+workspace_name: AiFiction 工作区
+root_dir: .
+books_dir: books
+active_book_id: mo-zhan-zhi-deng-ren
+default_book_id: mo-zhan-zhi-deng-ren
+book_index:
+  - book_id: mo-zhan-zhi-deng-ren
+    title: 末站执灯人
+    root_path: books/末站执灯人
+    book_file: books/末站执灯人/book.yml
+    stage: drafting
+    status: planning
+defaults:
+  chapter_file_pattern: "{index:04d}-{title}.md"
+  encoding: utf-8
+  auto_sync_after_finalize: true
+  context_pack_dirname: 03-中间产物/context-packs
+  proposal_dirname: 03-中间产物/proposals
+task_routing:
+  create_book:
+    trigger_examples:
+      - 我想写一本都市悬疑
+      - 新建一本玄幻复仇文
+    default_stage: planning
+  continue_book:
+    trigger_examples:
+      - 继续写当前作品
+      - 继续写这本书
+    use_active_book: true
+  write_chapter:
+    trigger_examples:
+      - 从第 12 章开始写
+      - 继续写下一章
+    required_context_pack: writing-pack
+  investigate_risk:
+    trigger_examples:
+      - 处理这个风险
+      - 看看这个冲突怎么改
+    required_context_pack: risk-investigation-pack

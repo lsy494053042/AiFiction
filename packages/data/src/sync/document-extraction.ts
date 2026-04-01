@@ -1,4 +1,4 @@
-import type { SourceDocumentAnalysis } from "./document-analysis";
+﻿import type { SourceDocumentAnalysis } from "./document-analysis";
 
 type ConfidenceLevel = "low" | "medium";
 
@@ -47,55 +47,55 @@ const relationKeywordGroups: Array<{
   {
     hint: "conflict",
     confidenceLevel: "medium",
-    keywords: ["\u8ffd", "\u6740", "\u5a01\u80c1", "\u4e89\u5435", "\u654c\u89c6", "\u62d4\u5200", "\u5bf9\u5cd9"],
+    keywords: ["追", "杀", "威胁", "争吵", "敌视", "拔刀", "对峙"],
   },
   {
     hint: "support",
     confidenceLevel: "medium",
-    keywords: ["\u5e2e", "\u6551", "\u62a4", "\u6276", "\u966a", "\u63d0\u9192", "\u63a9\u62a4"],
+    keywords: ["帮", "救", "护", "扶", "陪", "提醒", "掩护"],
   },
   {
     hint: "watching",
     confidenceLevel: "low",
-    keywords: ["\u770b\u7740", "\u76ef\u7740", "\u76ef", "\u8bd5\u63a2", "\u6000\u7591", "\u63d0\u9632"],
+    keywords: ["看着", "盯着", "盯", "试探", "怀疑", "提防"],
   },
 ];
 
 const foreshadowKeywords = [
-  "\u5370\u8bb0",
-  "\u79d8\u5bc6",
-  "\u7ebf\u7d22",
-  "\u5f02\u5e38",
-  "\u5f02\u6837",
-  "\u9884\u611f",
-  "\u4e0d\u8be5",
-  "\u4f3c\u4e4e",
-  "\u4eff\u4f5b",
-  "\u9ed1\u5f71",
-  "\u9057\u7269",
+  "印记",
+  "秘密",
+  "线索",
+  "异常",
+  "异样",
+  "预感",
+  "不该",
+  "似乎",
+  "仿佛",
+  "黑影",
+  "遗物",
 ];
 
 const timeMarkers = [
-  "\u6e05\u6668",
-  "\u65e9\u6668",
-  "\u4e0a\u5348",
-  "\u4e2d\u5348",
-  "\u5348\u540e",
-  "\u508d\u665a",
-  "\u9ec4\u660f",
-  "\u591c\u91cc",
-  "\u591c\u665a",
-  "\u534a\u591c",
-  "\u51cc\u6668",
-  "\u6b21\u65e5",
-  "\u7b2c\u4e8c\u5929",
-  "\u5f53\u665a",
-  "\u9ece\u660e",
+  "清晨",
+  "早晨",
+  "上午",
+  "中午",
+  "午后",
+  "傍晚",
+  "黄昏",
+  "夜里",
+  "夜晚",
+  "半夜",
+  "凌晨",
+  "次日",
+  "第二天",
+  "当晚",
+  "黎明",
 ];
 
 /**
  * 结构化抽取预览。
- * 当前先用启发式规则把角色、关系、伏笔、时间线候选提取出来，后续可替换成模型抽取。
+ * 首版先用启发式规则抽出角色、关系、伏笔和时间线候选，后续可替换成模型抽取。
  */
 export function extractSourceDocumentPreview(input: {
   textContent: string;
@@ -103,7 +103,7 @@ export function extractSourceDocumentPreview(input: {
 }): SourceDocumentExtractionPreview {
   const compactText = input.textContent.replace(/\r\n/g, "\n");
   const sentences = compactText
-    .split(/[\u3002\uff01\uff1f!?\n]/)
+    .split(/[。！？!?\n]/)
     .map((item) => item.trim())
     .filter((item) => item.length >= 6)
     .slice(0, 80);
@@ -137,7 +137,8 @@ export function extractSourceDocumentPreview(input: {
 }
 
 /**
- * 鐏忓棛绮ㄩ弸鍕閹惰棄褰囨０鍕潔閺嶇厧绱￠崠鏍ㄥ灇 Markdown閿涘本鏌熸笟澶告眽瀹搞儱鎻╅柅鐔奉吀閺屻儯鈧? */
+ * 把抽取预览整理成 Markdown 产物，方便后续审查和落盘。
+ */
 export function formatExtractionPreviewArtifact(input: SourceDocumentExtractionPreview): string {
   const characterLines = input.characters.length
     ? input.characters.map((item) => `- ${item.name} | mentions=${item.mentionCount} | confidence=${item.confidenceLevel}`).join("\n")
@@ -279,7 +280,7 @@ function inferRelation(sentence: string): { hint: string; confidenceLevel: Confi
 
 function buildEvidenceSnippets(text: string, name: string): string[] {
   const sentences = text
-    .split(/[\u3002\uff01\uff1f!?\n]/)
+    .split(/[。！？!?\n]/)
     .map((item) => item.trim())
     .filter(Boolean)
     .filter((item) => item.includes(name));
