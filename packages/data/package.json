@@ -6,6 +6,7 @@
   "types": "./src/index.ts",
   "scripts": {
     "db:bootstrap": "tsx src/bootstrap.ts",
+    "db:register-from-protocol": "tsx src/register-from-protocol.ts",
     "db:generate": "drizzle-kit generate --config=./drizzle.config.ts",
     "db:v2-smoke": "tsx src/v2-smoke.ts",
     "db:sync-smoke": "tsx src/v2-sync-smoke.ts",

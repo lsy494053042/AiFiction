@@ -1,0 +1,120 @@
+{
+  "artifactKind": "batch-review",
+  "generatedAt": "2026-04-03T10:49:49.540Z",
+  "workId": "a29c7346-ed24-4c39-9b27-54aaa06224c4",
+  "workSlug": "mo-zhan-zhi-deng-ren",
+  "workTitle": "末站执灯人",
+  "batchId": "opening-0001-0010",
+  "stage": "drafting",
+  "focusLabel": "前十章已重写，进入开篇复盘",
+  "reviewRequired": true,
+  "reviewStatus": "resolved",
+  "nextRequiredReviewAtChapter": 10,
+  "activeGlobalProfile": "default-global",
+  "activeBookProfile": "default-book",
+  "enabledRuleSets": [
+    "continuity",
+    "opening-arc",
+    "exposition",
+    "pacing"
+  ],
+  "enabledGates": [
+    "batch-review-required",
+    "meta-language-check",
+    "continuity-review",
+    "opening-arc-review",
+    "prewrite-plan-required",
+    "rhythm-plan-required",
+    "volume-budget-check"
+  ],
+  "recentChapters": [],
+  "findings": [
+    {
+      "id": "source-document:a29c7346-ed24-4c39-9b27-54aaa06224c4:file-source:primary-manuscript:document:52f8ca32ca712b5994bcbdeefa18fcaec3b2268d",
+      "title": "03-中间产物/context-packs/writing-pack.latest.md",
+      "summary": "2 条待处理项 / export",
+      "blockingLevel": "review",
+      "riskNature": "information-gap",
+      "sourcePath": "03-中间产物/context-packs/writing-pack.latest.md",
+      "sourceDocumentId": "a29c7346-ed24-4c39-9b27-54aaa06224c4:file-source:primary-manuscript:document:52f8ca32ca712b5994bcbdeefa18fcaec3b2268d",
+      "riskReasons": [
+        "抽取预览的置信度低于低风险阈值。",
+        "当前文本里还没有提取到清晰的关系信号。",
+        "当前文本里还没有提取到明确的时间线标记。",
+        "摘要预览的置信度低于低风险阈值。",
+        "Document hierarchy is deep and may need finer-grained splitting."
+      ]
+    },
+    {
+      "id": "source-document:a29c7346-ed24-4c39-9b27-54aaa06224c4:file-source:primary-manuscript:document:298bff8828f91f2a8b877247c45d789ba4e0db2b",
+      "title": "03-中间产物/context-packs/writing-pack.20260403-143427.md",
+      "summary": "2 条待处理项 / export",
+      "blockingLevel": "review",
+      "riskNature": "information-gap",
+      "sourcePath": "03-中间产物/context-packs/writing-pack.20260403-143427.md",
+      "sourceDocumentId": "a29c7346-ed24-4c39-9b27-54aaa06224c4:file-source:primary-manuscript:document:298bff8828f91f2a8b877247c45d789ba4e0db2b",
+      "riskReasons": [
+        "抽取预览的置信度低于低风险阈值。",
+        "当前文本里还没有提取到清晰的关系信号。",
+        "当前文本里还没有提取到明确的时间线标记。",
+        "摘要预览的置信度低于低风险阈值。",
+        "Document hierarchy is deep and may need finer-grained splitting."
+      ]
+    },
+    {
+      "id": "source-document:a29c7346-ed24-4c39-9b27-54aaa06224c4:file-source:primary-manuscript:document:d6a127ca14fae876464f23e785cb216314ae055a",
+      "title": "01-大纲/章节规划.md",
+      "summary": "2 条待处理项 / outline",
+      "blockingLevel": "review",
+      "riskNature": "confidence-review",
+      "sourcePath": "01-大纲/章节规划.md",
+      "sourceDocumentId": "a29c7346-ed24-4c39-9b27-54aaa06224c4:file-source:primary-manuscript:document:d6a127ca14fae876464f23e785cb216314ae055a",
+      "riskReasons": [
+        "抽取预览的置信度低于低风险阈值。",
+        "摘要预览的置信度低于低风险阈值。",
+        "Document hierarchy is deep and may need finer-grained splitting."
+      ]
+    },
+    {
+      "id": "source-document:a29c7346-ed24-4c39-9b27-54aaa06224c4:file-source:primary-manuscript:document:babf1e9983fef2abfcf73eb49a277a38a60088ef",
+      "title": "01-大纲/全书大纲.md",
+      "summary": "2 条待处理项 / outline",
+      "blockingLevel": "review",
+      "riskNature": "information-gap",
+      "sourcePath": "01-大纲/全书大纲.md",
+      "sourceDocumentId": "a29c7346-ed24-4c39-9b27-54aaa06224c4:file-source:primary-manuscript:document:babf1e9983fef2abfcf73eb49a277a38a60088ef",
+      "riskReasons": [
+        "抽取预览的置信度低于低风险阈值。",
+        "当前文本里还没有提取到明确的时间线标记。",
+        "摘要预览的置信度低于低风险阈值。",
+        "Document hierarchy is deep and may need finer-grained splitting."
+      ]
+    },
+    {
+      "id": "source-document:a29c7346-ed24-4c39-9b27-54aaa06224c4:file-source:primary-manuscript:document:997de01c043b1d3b034ebdd7107f45d0ad4228ca",
+      "title": "01-大纲/卷一大纲.md",
+      "summary": "2 条待处理项 / outline",
+      "blockingLevel": "review",
+      "riskNature": "information-gap",
+      "sourcePath": "01-大纲/卷一大纲.md",
+      "sourceDocumentId": "a29c7346-ed24-4c39-9b27-54aaa06224c4:file-source:primary-manuscript:document:997de01c043b1d3b034ebdd7107f45d0ad4228ca",
+      "riskReasons": [
+        "抽取预览的置信度低于低风险阈值。",
+        "当前文本里还没有提取到明显的伏笔候选。",
+        "当前文本里还没有提取到明确的时间线标记。",
+        "摘要预览的置信度低于低风险阈值。",
+        "Document hierarchy is deep and may need finer-grained splitting."
+      ]
+    }
+  ],
+  "candidatePrompts": [
+    "上一章章尾抛出的问题，下一章开头是否先接住了当场后果。",
+    "当前批次里，主角职业、当前处境、基础舞台关系是否仍然清楚。",
+    "这一批是否只堆谜团，还是已经出现了至少一次问题 -> 追查 -> 小兑现。"
+  ],
+  "nextActions": [
+    "先确认本批次最重要的 1-3 个问题是否成立。",
+    "将跨书适用的结论记为 global candidate，将本书特有问题记为 book-only rule。",
+    "完成批次复盘后，再生成下一批写作包。"
+  ]
+}

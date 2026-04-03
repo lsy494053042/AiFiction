@@ -1,7 +1,11 @@
-workspace_id: my-fiction-workspace
-workspace_name: 我的小说工作区
+workspace_id: your-workspace-id
+workspace_name: Your Workspace
 root_dir: .
 books_dir: books
+
+active_book_id:
+default_book_id:
+
 book_index: []
 
 defaults:
@@ -11,36 +15,27 @@ defaults:
   context_pack_dirname: 03-中间产物/context-packs
   proposal_dirname: 03-中间产物/proposals
 
-publishing_policy:
-  default_platform: 起点中文网
-  stop_loss_rules:
-    起点中文网:
-      evaluation_word_count: 500000
-      evaluation_label: 50万字止损线
-      description: 50万字时评估是否继续长线推进。
-    番茄小说:
-      evaluation_word_count: 300000
-      evaluation_label: 30万字止损线
-      description: 30万字时评估是否继续推进或提前收束。
-
-task_routing:
-  create_book:
-    trigger_examples:
-      - 我想写一本都市悬疑
-      - 新建一本玄幻复仇文
-    default_stage: planning
-  continue_book:
-    trigger_examples:
-      - 继续写当前作品
-      - 继续写这本书
-    use_active_book: true
-  write_chapter:
-    trigger_examples:
-      - 从第 12 章开始写
-      - 继续写下一章
-    required_context_pack: writing-pack
-  investigate_risk:
-    trigger_examples:
-      - 处理这个风险
-      - 看看这个冲突怎么改
-    required_context_pack: risk-investigation-pack
+knowledge_workflow:
+  batch_size: 5
+  require_batch_review_before_next_batch: true
+  auto_create_candidates_from_feedback: true
+  opening_arc_review_points: [3, 5, 10]
+  phase_review_word_counts: [30000, 50000]
+  active_budget:
+    global_rules: 12
+    book_rules: 12
+    batch_focus_findings: 5
+    total_book_rules: 20
+    total_validated_global_rules: 30
+  promotion_policy:
+    book_only_after_hits: 2
+    validated_global_after_batch_hits: 3
+    validated_global_after_book_hits: 2
+  enabled_gates:
+    - batch-review-required
+    - meta-language-check
+    - continuity-review
+    - opening-arc-review
+    - prewrite-plan-required
+    - rhythm-plan-required
+    - volume-budget-check

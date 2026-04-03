@@ -4,8 +4,8 @@ genre: 都市废土悬疑
 platform: 起点中文网
 stage: drafting
 status: planning
-active_volume: 2
-active_chapter: 150
+active_volume: 1
+active_chapter: 10
 paths:
   root_dir: .
   settings_dir: 00-设定
@@ -17,24 +17,38 @@ source_of_truth:
   world_settings: 00-设定/世界设定.md
   character_settings: 00-设定/角色设定.md
   master_outline: 01-大纲/全书大纲.md
-  active_volume_outline: 01-大纲/卷二大纲.md
+  active_volume_outline: 01-大纲/卷一大纲.md
 current_focus:
-  task_type: draft_chapter_batch
-  task_label: 进入卷二第三阶段，写第 151 至 160 章
-  goal: 围绕多节点同时苏醒后的第一次正式争序，把主城、黑市和站区三方围绕节点顺序的争夺全面拉开，完成卷二第三阶段第一组。
-  summary: 卷二第二阶段已完整收束，南口先认回程、旧交班房、南段换乘台、南线三位规则、双口分班，以及“两处节点同时醒来”都已经落地。下一步直接进入第
-    151 至 160 章。
+  task_type: opening-arc-review
+  task_label: 前十章已重写，进入开篇复盘
+  goal: 对 0001-0010 做开篇复盘，重点检查承接链、基础锚点、角色关系和节奏兑现，再决定是否进入 0011-0022。
+  summary: 前十章已按章纲重写完成，平均每章 2062.9 字；当前不直接继续正文，先完成开篇复盘和问题收束。
 hard_constraints:
-  - 卷二继续少查账、多现场、多代价、多关系
-  - 每批正文写完立刻跑 writing:meta-check
-  - 韩季同继续保持秩序压力和灰度，不写成单纯反派
-  - 乔宁要有自己的动作线，不只当信息位
-  - 母亲立场和执灯体系全貌继续后置，不在卷二前段讲穿
+  - 整卷骨架没完成前，不允许进入正文。
+  - 卷一章数不能先拍脑袋写死，必须由剧情事件量反推。
+  - 章节目标字数是参考目标，不允许为凑字数灌水。
+  - 过渡章、关系章、日常章必须前置规划，不能事后补。
+knowledge_state:
+  inherit_workspace_workflow: true
+  active_global_profile: default-global
+  active_book_profile: default-book
+  current_batch_id: opening-0001-0010
+  current_batch_review_required: true
+  current_batch_review_status: resolved
+  opening_arc_status: completed
+  next_required_review_at_chapter: 10
+  enabled_rule_sets:
+    - continuity
+    - opening-arc
+    - exposition
+    - pacing
 last_outputs:
-  latest_chapter_file: 02-正文/0150-两处节点同时醒来.md
+  latest_chapter_file: 02-正文/0010-第一次下到站台下面.md
   latest_summary_file: 03-中间产物/latest-summary.md
   latest_review_file: 03-中间产物/latest-review.md
-  latest_sync_source: 02-正文/0150-两处节点同时醒来.md
+  latest_review_data_file: 03-中间产物/latest-review.json
+  latest_knowledge_candidates_file: 03-中间产物/latest-knowledge-candidates.json
+  latest_sync_source: 03-中间产物/context-packs/writing-pack.20260403-143427.md
 sync:
   auto_sync_enabled: true
   root_source: 02-正文

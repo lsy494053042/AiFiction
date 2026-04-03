@@ -6,7 +6,13 @@ import YAML from "yaml";
 import type { WorkProfile } from "@aifiction/schemas";
 
 import { type SqliteClient, getSqliteClient, resolveWorkspaceRoot } from "../client";
-import { SqliteProjectCatalogRepository, SqliteSyncSourceRepository, type SyncFileSourceRecord } from "../repositories/v2";
+import {
+  SqliteKnowledgeMethodRepository,
+  SqliteProjectCatalogRepository,
+  SqliteSyncSourceRepository,
+  type KnowledgeItemRecord,
+  type SyncFileSourceRecord,
+} from "../repositories/v2";
 import { ensureSqliteV2Bootstrap } from "../v2/bootstrap";
 import { NovelWorkbenchService, type WorkbenchProjectSnapshot, type WorkbenchReviewBundleSummary } from "../workbench";
 
@@ -28,6 +34,31 @@ interface WorkspaceDefaults {
   proposal_dirname?: string;
 }
 
+interface WorkspaceKnowledgeWorkflowActiveBudgetProtocol {
+  global_rules?: number;
+  book_rules?: number;
+  batch_focus_findings?: number;
+  total_book_rules?: number;
+  total_validated_global_rules?: number;
+}
+
+interface WorkspaceKnowledgeWorkflowPromotionPolicyProtocol {
+  book_only_after_hits?: number;
+  validated_global_after_batch_hits?: number;
+  validated_global_after_book_hits?: number;
+}
+
+export interface WorkspaceKnowledgeWorkflowProtocol {
+  batch_size?: number;
+  require_batch_review_before_next_batch?: boolean;
+  auto_create_candidates_from_feedback?: boolean;
+  opening_arc_review_points?: number[];
+  phase_review_word_counts?: number[];
+  active_budget?: WorkspaceKnowledgeWorkflowActiveBudgetProtocol;
+  promotion_policy?: WorkspaceKnowledgeWorkflowPromotionPolicyProtocol;
+  enabled_gates?: string[];
+}
+
 export interface WorkspaceProtocol {
   workspace_id: string;
   workspace_name: string;
@@ -37,6 +68,7 @@ export interface WorkspaceProtocol {
   default_book_id?: string;
   book_index: WorkspaceBookIndexEntry[];
   defaults?: WorkspaceDefaults;
+  knowledge_workflow?: WorkspaceKnowledgeWorkflowProtocol;
   task_routing?: Record<string, Record<string, unknown>>;
 }
 
@@ -67,6 +99,8 @@ interface BookLastOutputsProtocol {
   latest_chapter_file?: string;
   latest_summary_file?: string;
   latest_review_file?: string;
+  latest_review_data_file?: string;
+  latest_knowledge_candidates_file?: string;
   latest_sync_source?: string;
 }
 
@@ -82,6 +116,18 @@ interface BookProposalCommitProtocol {
   require_manual_commit_for?: string[];
 }
 
+export interface BookKnowledgeStateProtocol {
+  inherit_workspace_workflow?: boolean;
+  active_global_profile?: string;
+  active_book_profile?: string;
+  current_batch_id?: string;
+  current_batch_review_required?: boolean;
+  current_batch_review_status?: string;
+  opening_arc_status?: string;
+  next_required_review_at_chapter?: number;
+  enabled_rule_sets?: string[];
+}
+
 export interface BookProtocol {
   book_id: string;
   title: string;
@@ -95,6 +141,7 @@ export interface BookProtocol {
   source_of_truth?: BookSourceOfTruthProtocol;
   current_focus?: BookCurrentFocusProtocol;
   hard_constraints?: string[];
+  knowledge_state?: BookKnowledgeStateProtocol;
   last_outputs?: BookLastOutputsProtocol;
   sync?: BookSyncProtocol;
   proposal_commit?: BookProposalCommitProtocol;
@@ -128,6 +175,16 @@ export interface WorkProtocolSummary {
   activeStage?: string;
   activeChapter?: number;
   activeVolume?: number;
+  knowledgeWorkflow?: WorkspaceKnowledgeWorkflowProtocol;
+  knowledgeState?: BookKnowledgeStateProtocol;
+  currentBatchId?: string;
+  currentBatchReviewRequired?: boolean;
+  currentBatchReviewStatus?: string;
+  activeGlobalProfile?: string;
+  activeBookProfile?: string;
+  nextRequiredReviewAtChapter?: number;
+  enabledRuleSets: string[];
+  enabledKnowledgeGates: string[];
   contextPackDirectoryPath: string;
   latestContextPacks: ProtocolContextPackSummary[];
 }
@@ -139,14 +196,121 @@ export interface GeneratedProtocolPack {
   updatedAt: string;
 }
 
+export interface GeneratedBatchReviewArtifact {
+  kind: "batch-review";
+  absolutePath: string;
+  displayPath: string;
+  jsonAbsolutePath: string;
+  jsonDisplayPath: string;
+  knowledgeCandidatesAbsolutePath: string;
+  knowledgeCandidatesDisplayPath: string;
+  updatedAt: string;
+}
+
+export interface BatchKnowledgePromotionDecision {
+  knowledgeItemId: string;
+  targetStatus: "book_only" | "validated_global" | "deprecated";
+  applicationResult?: "helpful" | "neutral" | "harmful";
+  note?: string;
+}
+
+export interface BatchKnowledgeGateDecision {
+  gateCode: string;
+  gateStatus: "passed" | "blocked" | "waived";
+  note?: string;
+}
+
+export interface ResolveBatchKnowledgeInput {
+  promotions?: BatchKnowledgePromotionDecision[];
+  gateResults?: BatchKnowledgeGateDecision[];
+}
+
+export interface ResolvedBatchKnowledgeSummary {
+  batchId: string;
+  promotedCount: number;
+  boundBookRuleCount: number;
+  boundGlobalRuleCount: number;
+  updatedApplicationCount: number;
+  resolvedGateCount: number;
+  reviewStatus: string;
+}
+
+interface BatchReviewChapterRecord {
+  order: number;
+  title: string;
+  summary: string;
+}
+
+interface BatchReviewFindingRecord {
+  id: string;
+  title: string;
+  summary: string;
+  blockingLevel: string;
+  riskNature: string;
+  sourcePath?: string;
+  sourceDocumentId?: string;
+  riskReasons: string[];
+}
+
+interface BatchReviewArtifactData {
+  artifactKind: "batch-review";
+  generatedAt: string;
+  workId: string;
+  workSlug: string;
+  workTitle: string;
+  batchId?: string;
+  stage?: string;
+  focusLabel?: string;
+  reviewRequired: boolean;
+  reviewStatus?: string;
+  nextRequiredReviewAtChapter?: number;
+  activeGlobalProfile?: string;
+  activeBookProfile?: string;
+  enabledRuleSets: string[];
+  enabledGates: string[];
+  recentChapters: BatchReviewChapterRecord[];
+  findings: BatchReviewFindingRecord[];
+  candidatePrompts: string[];
+  nextActions: string[];
+}
+
+interface KnowledgeCandidateRecord {
+  id: string;
+  status: "candidate";
+  suggestedScope: "pending";
+  sourceKind: "batch-review";
+  domain: string;
+  priority: string;
+  title: string;
+  summary: string;
+  rationale: string;
+  prompt: string;
+  suggestedRuleSets: string[];
+  sourceFindingIds: string[];
+  evidencePaths: string[];
+}
+
+interface KnowledgeCandidatesArtifactData {
+  artifactKind: "knowledge-candidates";
+  generatedAt: string;
+  workId: string;
+  workSlug: string;
+  workTitle: string;
+  batchId?: string;
+  sourceReviewJsonPath: string;
+  candidates: KnowledgeCandidateRecord[];
+}
+
 export class WorkspaceProtocolService {
   private readonly workspaceRoot: string;
+  private readonly knowledgeMethodRepository: SqliteKnowledgeMethodRepository;
   private readonly projectCatalogRepository: SqliteProjectCatalogRepository;
   private readonly syncSourceRepository: SqliteSyncSourceRepository;
   private readonly workbenchService: NovelWorkbenchService;
 
   constructor(private readonly client: SqliteClient = getSqliteClient()) {
     this.workspaceRoot = resolveWorkspaceRoot();
+    this.knowledgeMethodRepository = new SqliteKnowledgeMethodRepository(client);
     this.projectCatalogRepository = new SqliteProjectCatalogRepository(client);
     this.syncSourceRepository = new SqliteSyncSourceRepository(client);
     this.workbenchService = new NovelWorkbenchService(client);
@@ -209,6 +373,16 @@ export class WorkspaceProtocolService {
       activeStage: this.readString(book?.stage) ?? work.status,
       activeChapter: this.readNumber(book?.active_chapter),
       activeVolume: this.readNumber(book?.active_volume),
+      knowledgeWorkflow: workspace?.knowledge_workflow,
+      knowledgeState: book?.knowledge_state,
+      currentBatchId: this.readString(book?.knowledge_state?.current_batch_id),
+      currentBatchReviewRequired: this.readBoolean(book?.knowledge_state?.current_batch_review_required),
+      currentBatchReviewStatus: this.readString(book?.knowledge_state?.current_batch_review_status),
+      activeGlobalProfile: this.readString(book?.knowledge_state?.active_global_profile),
+      activeBookProfile: this.readString(book?.knowledge_state?.active_book_profile),
+      nextRequiredReviewAtChapter: this.readNumber(book?.knowledge_state?.next_required_review_at_chapter),
+      enabledRuleSets: this.readStringArray(book?.knowledge_state?.enabled_rule_sets),
+      enabledKnowledgeGates: this.readStringArray(workspace?.knowledge_workflow?.enabled_gates),
       contextPackDirectoryPath: this.resolveContextPackDirectory(bookRootPath, workspace, book),
       latestContextPacks,
     };
@@ -246,8 +420,11 @@ export class WorkspaceProtocolService {
     }
 
     const book = summary.book!;
-    const content = this.buildWritingPackMarkdown(summary, snapshot, book);
-    return this.writeContextPack(summary, "writing-pack", content);
+    const knowledgeItems = await this.loadKnowledgeItemsForWritingPack(summary, snapshot.work.id, book);
+    const content = this.buildWritingPackMarkdown(summary, snapshot, book, knowledgeItems);
+    const pack = this.writeContextPack(summary, "writing-pack", content);
+    await this.persistKnowledgeApplications(summary, snapshot.work.id, book, knowledgeItems, "writing-pack");
+    return pack;
   }
 
   async generateRiskInvestigationPackBySlug(workSlug: string, bundleId?: string): Promise<GeneratedProtocolPack> {
@@ -265,6 +442,124 @@ export class WorkspaceProtocolService {
 
     const content = this.buildRiskInvestigationPackMarkdown(summary, snapshot, bundle);
     return this.writeContextPack(summary, "risk-investigation-pack", content);
+  }
+
+  async generateBatchReviewBySlug(workSlug: string): Promise<GeneratedBatchReviewArtifact> {
+    const summary = await this.requireReadyProtocol(workSlug);
+    const snapshot = await this.workbenchService.getProjectSnapshotBySlug(workSlug);
+
+    if (!snapshot) {
+      throw new Error("找不到对应作品，无法生成当前批次复盘单。");
+    }
+
+    const book = summary.book!;
+    const artifactData = this.buildBatchReviewArtifactData(summary, snapshot, book);
+    const candidatesData = this.buildKnowledgeCandidatesArtifactData(
+      artifactData,
+      path.join(summary.bookRootPath, "03-中间产物", "latest-review.json"),
+    );
+    const content = this.buildBatchReviewMarkdownFromData(artifactData);
+    const artifact = this.writeBatchReviewArtifact(summary, book, content, artifactData, candidatesData);
+    await this.persistBatchKnowledge(summary, artifactData, candidatesData, artifact);
+    await this.persistKnowledgeGates(summary, artifactData, book);
+    this.persistGeneratedBatchReviewState(summary, book, artifact);
+    return artifact;
+  }
+
+  async resolveBatchKnowledgeBySlug(
+    workSlug: string,
+    input: ResolveBatchKnowledgeInput = {},
+  ): Promise<ResolvedBatchKnowledgeSummary> {
+    const summary = await this.requireReadyProtocol(workSlug);
+    const snapshot = await this.workbenchService.getProjectSnapshotBySlug(workSlug);
+
+    if (!snapshot) {
+      throw new Error("找不到对应作品，无法完成当前批次知识回写。");
+    }
+
+    const book = summary.book!;
+    const batchId = this.readString(book.knowledge_state?.current_batch_id);
+    if (!batchId) {
+      throw new Error("当前作品还没有 batch id，无法回写批次知识结果。");
+    }
+
+    const batchItems = await this.knowledgeMethodRepository.listBatchKnowledgeItems(batchId);
+    const candidateItems = batchItems.filter((item) => item.status === "candidate");
+    const profileSet = await this.knowledgeMethodRepository.ensureKnowledgeProfiles({
+      projectId: snapshot.work.id,
+      globalProfileKey: this.readString(book.knowledge_state?.active_global_profile),
+      bookProfileKey: this.readString(book.knowledge_state?.active_book_profile),
+    });
+
+    const normalizedPromotions = this.normalizeBatchKnowledgePromotions(candidateItems, input.promotions);
+    const gateResults = this.normalizeBatchKnowledgeGateResults(summary.enabledKnowledgeGates, input.gateResults);
+
+    await this.knowledgeMethodRepository.promoteKnowledgeItems({
+      decisions: normalizedPromotions.map((promotion) => ({
+        knowledgeItemId: promotion.knowledgeItemId,
+        nextStatus: promotion.targetStatus,
+        nextScope: this.mapKnowledgePromotionStatusToScope(promotion.targetStatus),
+        incrementValidationCount: promotion.targetStatus === "deprecated" ? 0 : 1,
+        note: promotion.note,
+      })),
+    });
+
+    const bindings = normalizedPromotions.flatMap((promotion) => {
+      if (promotion.targetStatus === "validated_global" && profileSet.globalProfile) {
+        return [
+          {
+            profileId: profileSet.globalProfile.id,
+            knowledgeItemId: promotion.knowledgeItemId,
+            bindingStatus: "active",
+            bindingReason: promotion.note ?? "Promoted from batch review into active global profile.",
+          },
+        ];
+      }
+      if (promotion.targetStatus === "book_only" && profileSet.bookProfile) {
+        return [
+          {
+            profileId: profileSet.bookProfile.id,
+            knowledgeItemId: promotion.knowledgeItemId,
+            bindingStatus: "active",
+            bindingReason: promotion.note ?? "Promoted from batch review into active book profile.",
+          },
+        ];
+      }
+      return [];
+    });
+
+    await this.knowledgeMethodRepository.bindKnowledgeProfileRules({ bindings });
+    await this.knowledgeMethodRepository.updateKnowledgeApplicationResults({
+      projectId: snapshot.work.id,
+      batchId,
+      results: normalizedPromotions.map((promotion) => ({
+        knowledgeItemId: promotion.knowledgeItemId,
+        packKind: "writing-pack",
+        applicationResult: promotion.applicationResult ?? this.defaultApplicationResultForPromotion(promotion.targetStatus),
+        note: promotion.note,
+      })),
+    });
+    await this.knowledgeMethodRepository.replaceKnowledgeGates({
+      projectId: snapshot.work.id,
+      batchId,
+      gates: gateResults.map((gate) => ({
+        gateCode: gate.gateCode,
+        gateStatus: gate.gateStatus,
+        note: gate.note,
+      })),
+    });
+
+    this.persistResolvedBatchReviewState(summary, book);
+
+    return {
+      batchId,
+      promotedCount: normalizedPromotions.length,
+      boundBookRuleCount: bindings.filter((binding) => binding.profileId === profileSet.bookProfile?.id).length,
+      boundGlobalRuleCount: bindings.filter((binding) => binding.profileId === profileSet.globalProfile?.id).length,
+      updatedApplicationCount: normalizedPromotions.length,
+      resolvedGateCount: gateResults.length,
+      reviewStatus: "resolved",
+    };
   }
 
   private async requireReadyProtocol(workSlug: string): Promise<WorkProtocolSummary> {
@@ -457,6 +752,37 @@ export class WorkspaceProtocolService {
         context_pack_dirname: current?.defaults?.context_pack_dirname ?? "03-中间产物/context-packs",
         proposal_dirname: current?.defaults?.proposal_dirname ?? "03-中间产物/proposals",
       },
+      knowledge_workflow: {
+        batch_size: current?.knowledge_workflow?.batch_size ?? 10,
+        require_batch_review_before_next_batch: current?.knowledge_workflow?.require_batch_review_before_next_batch ?? true,
+        auto_create_candidates_from_feedback: current?.knowledge_workflow?.auto_create_candidates_from_feedback ?? true,
+        opening_arc_review_points:
+          current?.knowledge_workflow?.opening_arc_review_points?.length
+            ? current.knowledge_workflow.opening_arc_review_points
+            : [3, 5, 10],
+        phase_review_word_counts:
+          current?.knowledge_workflow?.phase_review_word_counts?.length
+            ? current.knowledge_workflow.phase_review_word_counts
+            : [30000, 50000],
+        active_budget: {
+          global_rules: current?.knowledge_workflow?.active_budget?.global_rules ?? 12,
+          book_rules: current?.knowledge_workflow?.active_budget?.book_rules ?? 12,
+          batch_focus_findings: current?.knowledge_workflow?.active_budget?.batch_focus_findings ?? 5,
+          total_book_rules: current?.knowledge_workflow?.active_budget?.total_book_rules ?? 20,
+          total_validated_global_rules: current?.knowledge_workflow?.active_budget?.total_validated_global_rules ?? 30,
+        },
+        promotion_policy: {
+          book_only_after_hits: current?.knowledge_workflow?.promotion_policy?.book_only_after_hits ?? 2,
+          validated_global_after_batch_hits:
+            current?.knowledge_workflow?.promotion_policy?.validated_global_after_batch_hits ?? 3,
+          validated_global_after_book_hits:
+            current?.knowledge_workflow?.promotion_policy?.validated_global_after_book_hits ?? 2,
+        },
+        enabled_gates:
+          current?.knowledge_workflow?.enabled_gates?.length
+            ? current.knowledge_workflow.enabled_gates
+            : ["batch-review-required", "meta-language-check", "continuity-review", "opening-arc-review"],
+      },
       task_routing: current?.task_routing ?? {
         create_book: {
           trigger_examples: ["我想写一本都市悬疑", "新建一本玄幻复仇文"],
@@ -492,6 +818,10 @@ export class WorkspaceProtocolService {
     const resolvedActiveVolume = latestChapter?.volumeId
       ? snapshot.volumes.find((volume) => volume.id === latestChapter.volumeId)?.order
       : undefined;
+    const activeVolume = existing?.active_volume ?? resolvedActiveVolume ?? 1;
+    const activeChapter = existing?.active_chapter ?? latestChapter?.order ?? 1;
+    const batchSize = summary.workspace?.knowledge_workflow?.batch_size ?? 10;
+    const defaultBatchId = this.createDefaultBatchId(activeVolume, activeChapter, batchSize);
 
     return {
       book_id: snapshot.work.slug,
@@ -500,8 +830,8 @@ export class WorkspaceProtocolService {
       platform: snapshot.work.targetPlatform,
       stage: existing?.stage ?? (snapshot.work.status === "planning" ? "planning" : "drafting"),
       status: snapshot.work.status,
-      active_volume: existing?.active_volume ?? resolvedActiveVolume ?? 1,
-      active_chapter: existing?.active_chapter ?? latestChapter?.order ?? 1,
+      active_volume: activeVolume,
+      active_chapter: activeChapter,
       paths: {
         root_dir: ".",
         settings_dir: settingsDir,
@@ -523,10 +853,30 @@ export class WorkspaceProtocolService {
         summary: existing?.current_focus?.summary ?? "继续推进当前主线，确保结构化事实与正文同步。",
       },
       hard_constraints: existing?.hard_constraints?.length ? existing.hard_constraints : snapshot.work.hardConstraints,
+      knowledge_state: {
+        inherit_workspace_workflow: existing?.knowledge_state?.inherit_workspace_workflow ?? true,
+        active_global_profile: existing?.knowledge_state?.active_global_profile ?? "default-global",
+        active_book_profile: existing?.knowledge_state?.active_book_profile ?? `${snapshot.work.slug}-opening`,
+        current_batch_id: existing?.knowledge_state?.current_batch_id ?? defaultBatchId,
+        current_batch_review_required: existing?.knowledge_state?.current_batch_review_required ?? false,
+        current_batch_review_status: existing?.knowledge_state?.current_batch_review_status ?? "not-started",
+        opening_arc_status:
+          existing?.knowledge_state?.opening_arc_status ?? (activeChapter >= 10 ? "completed" : "in-progress"),
+        next_required_review_at_chapter:
+          existing?.knowledge_state?.next_required_review_at_chapter ??
+          this.computeNextRequiredReviewAtChapter(activeChapter, batchSize),
+        enabled_rule_sets:
+          existing?.knowledge_state?.enabled_rule_sets?.length
+            ? existing.knowledge_state.enabled_rule_sets
+            : ["continuity", "exposition", "pacing"],
+      },
       last_outputs: {
         latest_chapter_file: existing?.last_outputs?.latest_chapter_file ?? latestDocumentPath,
         latest_summary_file: existing?.last_outputs?.latest_summary_file ?? "03-中间产物/latest-summary.md",
         latest_review_file: existing?.last_outputs?.latest_review_file ?? "03-中间产物/latest-review.md",
+        latest_review_data_file: existing?.last_outputs?.latest_review_data_file ?? "03-涓棿浜х墿/latest-review.json",
+        latest_knowledge_candidates_file:
+          existing?.last_outputs?.latest_knowledge_candidates_file ?? "03-涓棿浜х墿/latest-knowledge-candidates.json",
         latest_sync_source: existing?.last_outputs?.latest_sync_source ?? latestDocumentPath,
       },
       sync: {
@@ -548,13 +898,22 @@ export class WorkspaceProtocolService {
     summary: WorkProtocolSummary,
     snapshot: WorkbenchProjectSnapshot,
     book: BookProtocol,
+    knowledgeItems: KnowledgeItemRecord[],
   ): string {
     const recentChapters = [...snapshot.chapters].slice(-3).reverse();
     const recentCharacters = snapshot.characters.slice(0, 5);
     const sourceOfTruth = book.source_of_truth ?? {};
     const hardConstraints = book.hard_constraints ?? [];
+    const knowledgeWorkflow = summary.knowledgeWorkflow;
+    const knowledgeState = book.knowledge_state;
+    const enabledRuleSets = this.readStringArray(knowledgeState?.enabled_rule_sets);
+    const enabledGates = this.readStringArray(knowledgeWorkflow?.enabled_gates);
+    const currentBatchReviewRequired = this.readBoolean(knowledgeState?.current_batch_review_required);
+    const currentBatchReviewStatus = this.readString(knowledgeState?.current_batch_review_status);
+    const nextRequiredReviewAtChapter = this.readNumber(knowledgeState?.next_required_review_at_chapter);
+    const activeKnowledgeItems = knowledgeItems.slice(0, knowledgeWorkflow?.active_budget?.batch_focus_findings ?? 5);
 
-    return [
+    const lines = [
       `# 写作包：${snapshot.work.title}`,
       "",
       `- 生成时间：${new Date().toISOString()}`,
@@ -562,10 +921,10 @@ export class WorkspaceProtocolService {
       `- 当前焦点：${book.current_focus?.task_label ?? "待补当前任务"}`,
       `- 目标：${book.current_focus?.goal ?? snapshot.work.tagline}`,
       "",
-      "## 关键信息锚点",
+      "## 关键锚点",
       `- 协议文件：${this.toDisplayPath(summary.bookFilePath)}`,
       `- 作品目录：${this.toDisplayPath(summary.bookRootPath)}`,
-      `- 设定文件：${sourceOfTruth.project_brief ?? "待补"}`,
+      `- 作品定位：${sourceOfTruth.project_brief ?? "待补"}`,
       `- 世界设定：${sourceOfTruth.world_settings ?? "待补"}`,
       `- 角色设定：${sourceOfTruth.character_settings ?? "待补"}`,
       `- 全书大纲：${sourceOfTruth.master_outline ?? "待补"}`,
@@ -573,6 +932,17 @@ export class WorkspaceProtocolService {
       "",
       "## 必须遵守的硬约束",
       ...(hardConstraints.length ? hardConstraints.map((item) => `- ${item}`) : ["- 当前还没有写入硬约束，请先确认作品定位。"]),
+      "",
+      "## 知识流程与当前关卡",
+      `- 全局 profile：${this.readString(knowledgeState?.active_global_profile) ?? "未设置"}`,
+      `- 本书 profile：${this.readString(knowledgeState?.active_book_profile) ?? "未设置"}`,
+      `- 当前 batch：${this.readString(knowledgeState?.current_batch_id) ?? "未设置"}`,
+      `- batch 大小：${this.readNumber(knowledgeWorkflow?.batch_size) ?? 10} 章`,
+      `- 当前 batch 是否必须复盘：${currentBatchReviewRequired ? "是" : "否"}`,
+      `- 复盘状态：${currentBatchReviewStatus ?? "未设置"}`,
+      `- 下一个必复盘章节节点：${nextRequiredReviewAtChapter ?? "未设置"}`,
+      ...(enabledRuleSets.length ? [`- 启用规则集：${enabledRuleSets.join(" / ")}`] : ["- 当前没有启用规则集。"]),
+      ...(enabledGates.length ? [`- 启用 gate：${enabledGates.join(" / ")}`] : ["- 当前没有启用 gate。"]),
       "",
       "## 最近章节摘要",
       ...(recentChapters.length
@@ -586,9 +956,458 @@ export class WorkspaceProtocolService {
       "",
       "## 系统建议的下一步",
       `- 优先完成：${book.current_focus?.summary ?? "继续按照当前焦点任务推进。"}`,
-    ].join("\n");
+    ];
+
+    lines.splice(
+      24,
+      0,
+      `- 候选经验文件：${book.last_outputs?.latest_knowledge_candidates_file ?? "尚未生成"}`,
+      "",
+      "## 当前候选经验",
+      `- 候选数量：${knowledgeItems.length}`,
+      ...(activeKnowledgeItems.length
+        ? activeKnowledgeItems.map(
+            (candidate, index) => `- ${index + 1}. ${candidate.title}（${candidate.status} / ${candidate.scope} / ${candidate.domain}）`,
+          )
+        : ["- 当前还没有候选经验对象，写完当前 batch 后请先生成复盘单。"]),
+      "",
+    );
+
+    return lines.join("\n");
   }
 
+  private async loadKnowledgeItemsForWritingPack(
+    summary: WorkProtocolSummary,
+    projectId: string,
+    book: BookProtocol,
+  ): Promise<KnowledgeItemRecord[]> {
+    const knowledgeWorkflow = summary.knowledgeWorkflow;
+    const fetchLimit = this.resolveKnowledgeFetchLimit(knowledgeWorkflow);
+    const batchId = this.readString(book.knowledge_state?.current_batch_id);
+    const activeGlobalProfile = this.readString(book.knowledge_state?.active_global_profile);
+    const activeBookProfile = this.readString(book.knowledge_state?.active_book_profile);
+
+    try {
+      await this.knowledgeMethodRepository.ensureKnowledgeProfiles({
+        projectId,
+        globalProfileKey: activeGlobalProfile,
+        bookProfileKey: activeBookProfile,
+      });
+
+      const profileItems = await this.knowledgeMethodRepository.listKnowledgeItemsForActiveProfiles({
+        projectId,
+        globalProfileKey: activeGlobalProfile,
+        bookProfileKey: activeBookProfile,
+        limit: fetchLimit,
+      });
+      const batchItems = batchId ? await this.knowledgeMethodRepository.listBatchKnowledgeItems(batchId) : [];
+      const candidateItems = batchItems.filter((item) => item.status === "candidate");
+      const mergedItems = this.mergeKnowledgeItems(profileItems, candidateItems);
+
+      if (mergedItems.length) {
+        return this.applyKnowledgeActiveBudget(mergedItems, summary);
+      }
+
+      const dbItems = await this.knowledgeMethodRepository.listKnowledgeItemsForWritingPack({
+        projectId,
+        limit: fetchLimit,
+      });
+      if (dbItems.length) {
+        return this.applyKnowledgeActiveBudget(dbItems, summary);
+      }
+    } catch {
+      // Fall back to file artifacts when the DB layer is not ready yet.
+    }
+
+    const fallbackCandidates = this.readKnowledgeCandidatesArtifact(summary, book);
+    const fallbackItems = fallbackCandidates.slice(0, fetchLimit).map((candidate) => ({
+      id: candidate.id,
+      projectId,
+      batchId: this.readString(book.knowledge_state?.current_batch_id),
+      sourceFindingId: candidate.sourceFindingIds[0],
+      scope: this.mapSuggestedScopeToKnowledgeScope(candidate.suggestedScope),
+      status: candidate.status,
+      domain: candidate.domain,
+      priority: candidate.priority,
+      title: candidate.title,
+      summary: candidate.summary,
+      rationale: candidate.rationale,
+      prompt: candidate.prompt,
+      validationCount: 0,
+      profileAffinity: candidate.suggestedRuleSets,
+      evidencePaths: candidate.evidencePaths,
+      updatedAt: new Date(0).toISOString(),
+    }));
+    return this.applyKnowledgeActiveBudget(fallbackItems, summary);
+  }
+
+  private mergeKnowledgeItems(
+    profileItems: KnowledgeItemRecord[],
+    candidateItems: KnowledgeItemRecord[],
+  ): KnowledgeItemRecord[] {
+    const merged: KnowledgeItemRecord[] = [];
+    const seen = new Set<string>();
+
+    for (const item of [...profileItems, ...candidateItems]) {
+      if (seen.has(item.id)) {
+        continue;
+      }
+      seen.add(item.id);
+      merged.push(item);
+    }
+
+    return merged;
+  }
+
+  private resolveKnowledgeFetchLimit(
+    knowledgeWorkflow: WorkspaceKnowledgeWorkflowProtocol | undefined,
+  ): number {
+    const globalLimit = knowledgeWorkflow?.active_budget?.global_rules ?? 12;
+    const bookLimit = knowledgeWorkflow?.active_budget?.book_rules ?? 12;
+    const batchFocusLimit = knowledgeWorkflow?.active_budget?.batch_focus_findings ?? 5;
+    return Math.max(globalLimit + bookLimit + batchFocusLimit, batchFocusLimit, 5);
+  }
+
+  private applyKnowledgeActiveBudget(
+    items: KnowledgeItemRecord[],
+    summary: WorkProtocolSummary,
+  ): KnowledgeItemRecord[] {
+    const workflow = summary.knowledgeWorkflow;
+    const globalLimit = workflow?.active_budget?.global_rules ?? 12;
+    const bookLimit = workflow?.active_budget?.book_rules ?? 12;
+    const batchFocusLimit = workflow?.active_budget?.batch_focus_findings ?? 5;
+
+    const selected: KnowledgeItemRecord[] = [];
+    const seen = new Set<string>();
+
+    let added = 0;
+    for (const item of items.filter((entry) => this.isGlobalKnowledgeItem(entry))) {
+      if (added >= globalLimit || seen.has(item.id)) {
+        continue;
+      }
+      selected.push(item);
+      seen.add(item.id);
+      added += 1;
+    }
+
+    added = 0;
+    for (const item of items.filter((entry) => this.isBookKnowledgeItem(entry, summary.workId))) {
+      if (added >= bookLimit || seen.has(item.id)) {
+        continue;
+      }
+      selected.push(item);
+      seen.add(item.id);
+      added += 1;
+    }
+
+    added = 0;
+    for (const item of items.filter((entry) => entry.status === "candidate")) {
+      if (added >= batchFocusLimit || seen.has(item.id)) {
+        continue;
+      }
+      selected.push(item);
+      seen.add(item.id);
+      added += 1;
+    }
+
+    return selected;
+  }
+
+  private isGlobalKnowledgeItem(item: KnowledgeItemRecord): boolean {
+    return item.scope === "global" || item.status === "validated_global";
+  }
+
+  private isBookKnowledgeItem(item: KnowledgeItemRecord, workId: string): boolean {
+    return item.projectId === workId && (item.status === "active" || item.status === "book_only");
+  }
+
+  private readKnowledgeCandidatesArtifact(
+    summary: WorkProtocolSummary,
+    book: BookProtocol,
+  ): KnowledgeCandidateRecord[] {
+    const storedPath = this.readString(book.last_outputs?.latest_knowledge_candidates_file);
+    if (!storedPath) {
+      return [];
+    }
+
+    const resolvedPath = this.resolveStoredBookPath(summary.bookRootPath, storedPath);
+    if (!resolvedPath || !fs.existsSync(resolvedPath)) {
+      return [];
+    }
+
+    try {
+      const raw = fs.readFileSync(resolvedPath, "utf8");
+      const parsed = JSON.parse(raw) as Partial<KnowledgeCandidatesArtifactData>;
+      if (!Array.isArray(parsed.candidates)) {
+        return [];
+      }
+
+      return parsed.candidates.filter((candidate): candidate is KnowledgeCandidateRecord => {
+        return Boolean(candidate?.id && candidate?.title && candidate?.status && candidate?.suggestedScope);
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  private resolveStoredBookPath(bookRootPath: string, storedPath: string): string {
+    const normalized = storedPath.replace(/\//g, path.sep);
+    return path.isAbsolute(normalized) ? normalized : path.join(bookRootPath, normalized);
+  }
+
+  private buildBatchReviewArtifactData(
+    summary: WorkProtocolSummary,
+    snapshot: WorkbenchProjectSnapshot,
+    book: BookProtocol,
+  ): BatchReviewArtifactData {
+    const knowledgeWorkflow = summary.knowledgeWorkflow;
+    const knowledgeState = book.knowledge_state;
+    const enabledRuleSets = this.readStringArray(knowledgeState?.enabled_rule_sets);
+    const enabledGates = this.readStringArray(knowledgeWorkflow?.enabled_gates);
+    const recentChapters = [...snapshot.chapters].slice(-5).reverse();
+    const reviewBundles = [...snapshot.pendingConflictBundles, ...snapshot.pendingReviewBundles].slice(
+      0,
+      knowledgeWorkflow?.active_budget?.batch_focus_findings ?? 5,
+    );
+    const candidatePrompts = this.buildBatchCandidatePrompts(enabledRuleSets, knowledgeState);
+
+    return {
+      artifactKind: "batch-review",
+      generatedAt: new Date().toISOString(),
+      workId: snapshot.work.id,
+      workSlug: snapshot.work.slug,
+      workTitle: snapshot.work.title,
+      batchId: this.readString(knowledgeState?.current_batch_id),
+      stage: book.stage ?? snapshot.work.status,
+      focusLabel: book.current_focus?.task_label,
+      reviewRequired: this.readBoolean(knowledgeState?.current_batch_review_required) ?? false,
+      reviewStatus: this.readString(knowledgeState?.current_batch_review_status),
+      nextRequiredReviewAtChapter: this.readNumber(knowledgeState?.next_required_review_at_chapter),
+      activeGlobalProfile: this.readString(knowledgeState?.active_global_profile),
+      activeBookProfile: this.readString(knowledgeState?.active_book_profile),
+      enabledRuleSets,
+      enabledGates,
+      recentChapters: recentChapters.map((chapter) => ({
+        order: chapter.order,
+        title: chapter.title,
+        summary: chapter.summary,
+      })),
+      findings: reviewBundles.map((bundle) => ({
+        id: bundle.id,
+        title: bundle.title,
+        summary: bundle.summary,
+        blockingLevel: bundle.blockingLevel,
+        riskNature: bundle.riskNature,
+        sourcePath: bundle.sourcePath,
+        sourceDocumentId: bundle.sourceDocumentId,
+        riskReasons: bundle.riskReasons,
+      })),
+      candidatePrompts,
+      nextActions: [
+        "先确认本批次最重要的 1-3 个问题是否成立。",
+        "将跨书适用的结论记为 global candidate，将本书特有问题记为 book-only rule。",
+        "完成批次复盘后，再生成下一批写作包。",
+      ],
+    };
+  }
+  private async persistBatchKnowledge(
+    summary: WorkProtocolSummary,
+    artifactData: BatchReviewArtifactData,
+    candidatesData: KnowledgeCandidatesArtifactData,
+    artifact: GeneratedBatchReviewArtifact,
+  ): Promise<void> {
+    const chapterOrders = artifactData.recentChapters.map((chapter) => chapter.order);
+    const batchId = artifactData.batchId ?? `${summary.workId}-batch-${this.createTimestampStamp()}`;
+    const findingIdMap = new Map<string, string>();
+    const findings = artifactData.findings.map((finding, index) => {
+      const persistedFindingId = `${batchId}-finding-${index + 1}`;
+      findingIdMap.set(finding.id, persistedFindingId);
+      return {
+        id: persistedFindingId,
+        sourceType: "review-bundle",
+        feedbackTier: "system",
+        domain: this.mapRiskNatureToKnowledgeDomain(finding.riskNature),
+        severity: this.mapBlockingLevelToSeverity(finding.blockingLevel),
+        title: finding.title,
+        summary: finding.summary,
+        sourcePath: finding.sourcePath,
+        sourceDocumentId: finding.sourceDocumentId,
+        riskNature: finding.riskNature,
+        riskReasons: finding.riskReasons,
+        evidencePaths: finding.sourcePath ? [finding.sourcePath] : [],
+      };
+    });
+
+    await this.knowledgeMethodRepository.saveBatchKnowledge({
+      projectId: artifactData.workId,
+      batchId,
+      batchKey: artifactData.batchId ?? batchId,
+      stageLabel: artifactData.stage,
+      focusLabel: artifactData.focusLabel,
+      chapterFrom: chapterOrders.length ? Math.min(...chapterOrders) : undefined,
+      chapterTo: chapterOrders.length ? Math.max(...chapterOrders) : undefined,
+      reviewStatus: artifactData.reviewStatus ?? "generated",
+      sourceReviewFile: artifact.displayPath,
+      sourceReviewDataFile: artifact.jsonDisplayPath,
+      sourceCandidatesFile: artifact.knowledgeCandidatesDisplayPath,
+      findings,
+      items: candidatesData.candidates.map((candidate) => ({
+        id: candidate.id,
+        scope: this.mapSuggestedScopeToKnowledgeScope(candidate.suggestedScope),
+        status: candidate.status,
+        domain: candidate.domain,
+        priority: candidate.priority,
+        title: candidate.title,
+        summary: candidate.summary,
+        rationale: candidate.rationale,
+        prompt: candidate.prompt,
+        validationCount: 0,
+        profileAffinity: candidate.suggestedRuleSets,
+        evidencePaths: candidate.evidencePaths,
+        sourceFindingIds: candidate.sourceFindingIds.map((id) => findingIdMap.get(id) ?? id),
+      })),
+    });
+  }
+
+  private async persistKnowledgeApplications(
+    summary: WorkProtocolSummary,
+    projectId: string,
+    book: BookProtocol,
+    knowledgeItems: KnowledgeItemRecord[],
+    packKind: "writing-pack" | "risk-investigation-pack",
+  ): Promise<void> {
+    const batchId = this.readString(book.knowledge_state?.current_batch_id);
+    if (!batchId) {
+      return;
+    }
+
+    await this.knowledgeMethodRepository.recordKnowledgeApplications({
+      projectId,
+      batchId,
+      packKind,
+      itemIds: knowledgeItems.map((item) => item.id),
+      note: `Auto-recorded when generating ${packKind}.`,
+    });
+  }
+
+  private async persistKnowledgeGates(
+    summary: WorkProtocolSummary,
+    artifactData: BatchReviewArtifactData,
+    book: BookProtocol,
+  ): Promise<void> {
+    const batchId = artifactData.batchId ?? this.readString(book.knowledge_state?.current_batch_id);
+    if (!batchId) {
+      return;
+    }
+
+    const gates = artifactData.enabledGates.map((gateCode) => ({
+      gateCode,
+      gateStatus: this.resolveGateStatus(gateCode, artifactData, book),
+      note: this.resolveGateNote(gateCode, artifactData, book),
+    }));
+
+    await this.knowledgeMethodRepository.replaceKnowledgeGates({
+      projectId: artifactData.workId,
+      batchId,
+      gates,
+    });
+  }
+
+  private buildBatchReviewMarkdownFromData(data: BatchReviewArtifactData): string {
+    return [
+      `# 当前批次复盘单：${data.workTitle}`,
+      "",
+      `- artifact_kind: ${data.artifactKind}`,
+      `- 生成时间：${data.generatedAt}`,
+      `- 当前 batch：${data.batchId ?? "未设置"}`,
+      `- 当前阶段：${data.stage ?? "未设置"}`,
+      `- 当前焦点：${data.focusLabel ?? "待补当前任务"}`,
+      `- 复盘要求：${data.reviewRequired ? "必须先复盘再继续下一批" : "当前未强制要求"}`,
+      `- 复盘状态：${data.reviewStatus ?? "未设置"}`,
+      `- 下一个必复盘章节点：${data.nextRequiredReviewAtChapter ?? "未设置"}`,
+      "",
+      "## 当前启用的知识规则",
+      ...(data.enabledRuleSets.length ? data.enabledRuleSets.map((item) => `- ${item}`) : ["- 当前没有启用规则集。"]),
+      "",
+      "## 当前启用的 gate",
+      ...(data.enabledGates.length ? data.enabledGates.map((item) => `- ${item}`) : ["- 当前没有启用 gate。"]),
+      "",
+      "## 最近批次章节",
+      ...(data.recentChapters.length
+        ? data.recentChapters.map((chapter) => `- 第 ${chapter.order} 章《${chapter.title}》：${chapter.summary}`)
+        : ["- 当前没有可复盘的章节。"]),
+      "",
+      "## 系统识别到的重点 findings",
+      ...(data.findings.length
+        ? data.findings.map((finding, index) => {
+            const reasons = finding.riskReasons.length ? `；原因：${finding.riskReasons.join(" / ")}` : "";
+            return `${index + 1}. [${finding.blockingLevel}] ${finding.title}：${finding.summary}${reasons}`;
+          })
+        : ["1. 当前没有挂起的 review bundle，可以优先做人手复盘和经验提炼。"]),
+      "",
+      "## 建议转成候选经验的问题",
+      ...(data.candidatePrompts.length ? data.candidatePrompts.map((prompt) => `- ${prompt}`) : ["- 当前没有生成候选经验提示。"]),
+      "",
+      "## 下一步动作",
+      ...data.nextActions.map((action) => `- ${action}`),
+    ].join("\n");
+  }
+  private buildBatchReviewMarkdown(
+    summary: WorkProtocolSummary,
+    snapshot: WorkbenchProjectSnapshot,
+    book: BookProtocol,
+  ): string {
+    const knowledgeWorkflow = summary.knowledgeWorkflow;
+    const knowledgeState = book.knowledge_state;
+    const enabledRuleSets = this.readStringArray(knowledgeState?.enabled_rule_sets);
+    const enabledGates = this.readStringArray(knowledgeWorkflow?.enabled_gates);
+    const recentChapters = [...snapshot.chapters].slice(-5).reverse();
+    const reviewBundles = [...snapshot.pendingConflictBundles, ...snapshot.pendingReviewBundles].slice(
+      0,
+      knowledgeWorkflow?.active_budget?.batch_focus_findings ?? 5,
+    );
+    const candidatePrompts = this.buildBatchCandidatePrompts(enabledRuleSets, knowledgeState);
+
+    return [
+      `# 当前批次复盘单：${snapshot.work.title}`,
+      "",
+      "- artifact_kind: batch-review",
+      `- 生成时间：${new Date().toISOString()}`,
+      `- 当前 batch：${this.readString(knowledgeState?.current_batch_id) ?? "未设置"}`,
+      `- 当前阶段：${book.stage ?? snapshot.work.status}`,
+      `- 当前焦点：${book.current_focus?.task_label ?? "待补当前任务"}`,
+      `- 复盘要求：${this.readBoolean(knowledgeState?.current_batch_review_required) ? "必须先复盘再继续下一批" : "当前未强制要求"}`,
+      `- 复盘状态：${this.readString(knowledgeState?.current_batch_review_status) ?? "未设置"}`,
+      `- 下一个必复盘章节点：${this.readNumber(knowledgeState?.next_required_review_at_chapter) ?? "未设置"}`,
+      "",
+      "## 当前启用的知识规则",
+      ...(enabledRuleSets.length ? enabledRuleSets.map((item) => `- ${item}`) : ["- 当前没有启用规则集。"]),
+      "",
+      "## 当前启用的 gate",
+      ...(enabledGates.length ? enabledGates.map((item) => `- ${item}`) : ["- 当前没有启用 gate。"]),
+      "",
+      "## 最近批次章节",
+      ...(recentChapters.length
+        ? recentChapters.map((chapter) => `- 第 ${chapter.order} 章《${chapter.title}》：${chapter.summary}`)
+        : ["- 当前没有可复盘的章节。"]),
+      "",
+      "## 系统识别到的重点 findings",
+      ...(reviewBundles.length
+        ? reviewBundles.map((bundle, index) => {
+            const reasons = bundle.riskReasons.length ? `；原因：${bundle.riskReasons.join(" / ")}` : "";
+            return `${index + 1}. [${bundle.blockingLevel}] ${bundle.title}：${bundle.summary}${reasons}`;
+          })
+        : ["1. 当前没有挂起的 review bundle，可以优先做人手复盘和经验提炼。"]),
+      "",
+      "## 建议转成候选经验的问题",
+      ...(candidatePrompts.length ? candidatePrompts.map((prompt) => `- ${prompt}`) : ["- 当前没有生成候选经验提示。"]),
+      "",
+      "## 下一步动作",
+      "- 先确认本批次最重要的 1-3 个问题是否成立。",
+      "- 将跨书适用的结论记为 global candidate，将本书特有问题记为 book-only rule。",
+      "- 完成批次复盘后，再生成下一批写作包。",
+    ].join("\n");
+  }
   private buildRiskInvestigationPackMarkdown(
     summary: WorkProtocolSummary,
     snapshot: WorkbenchProjectSnapshot,
@@ -664,6 +1483,341 @@ export class WorkspaceProtocolService {
     };
   }
 
+  private writeBatchReviewArtifact(
+    summary: WorkProtocolSummary,
+    book: BookProtocol,
+    content: string,
+    artifactData: BatchReviewArtifactData,
+    candidatesData: KnowledgeCandidatesArtifactData,
+  ): GeneratedBatchReviewArtifact {
+    const latestConfiguredPath = this.readString(book.last_outputs?.latest_review_file) ?? "03-中间产物/latest-review.md";
+    const latestAbsolutePath = path.isAbsolute(latestConfiguredPath)
+      ? path.normalize(latestConfiguredPath)
+      : path.join(summary.bookRootPath, latestConfiguredPath);
+    const outputDir = path.dirname(latestAbsolutePath);
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    const stamp = this.createTimestampStamp();
+    const archivePath = path.join(outputDir, `batch-review.${stamp}.md`);
+    const latestJsonPath = path.join(outputDir, "latest-review.json");
+    const archiveJsonPath = path.join(outputDir, `batch-review.${stamp}.json`);
+    const latestCandidatesPath = path.join(outputDir, "latest-knowledge-candidates.json");
+    const archiveCandidatesPath = path.join(outputDir, `knowledge-candidates.${stamp}.json`);
+    fs.writeFileSync(latestAbsolutePath, content, "utf8");
+    fs.writeFileSync(archivePath, content, "utf8");
+    fs.writeFileSync(latestJsonPath, JSON.stringify(artifactData, null, 2), "utf8");
+    fs.writeFileSync(archiveJsonPath, JSON.stringify(artifactData, null, 2), "utf8");
+    fs.writeFileSync(latestCandidatesPath, JSON.stringify(candidatesData, null, 2), "utf8");
+    fs.writeFileSync(archiveCandidatesPath, JSON.stringify(candidatesData, null, 2), "utf8");
+
+    const stats = fs.statSync(latestAbsolutePath);
+    return {
+      kind: "batch-review",
+      absolutePath: latestAbsolutePath,
+      displayPath: this.toDisplayPath(latestAbsolutePath),
+      jsonAbsolutePath: latestJsonPath,
+      jsonDisplayPath: this.toDisplayPath(latestJsonPath),
+      knowledgeCandidatesAbsolutePath: latestCandidatesPath,
+      knowledgeCandidatesDisplayPath: this.toDisplayPath(latestCandidatesPath),
+      updatedAt: stats.mtime.toISOString(),
+    };
+  }
+
+  private persistGeneratedBatchReviewState(
+    summary: WorkProtocolSummary,
+    book: BookProtocol,
+    artifact: GeneratedBatchReviewArtifact,
+  ): void {
+    const relativeToBookRoot = path.relative(summary.bookRootPath, artifact.absolutePath);
+    const nextLatestReviewFile =
+      !path.isAbsolute(relativeToBookRoot) && !relativeToBookRoot.startsWith("..")
+        ? this.normalizeForYaml(relativeToBookRoot)
+        : this.toDisplayPath(artifact.absolutePath);
+    const relativeJsonToBookRoot = path.relative(summary.bookRootPath, artifact.jsonAbsolutePath);
+    const nextLatestReviewDataFile =
+      !path.isAbsolute(relativeJsonToBookRoot) && !relativeJsonToBookRoot.startsWith("..")
+        ? this.normalizeForYaml(relativeJsonToBookRoot)
+        : this.toDisplayPath(artifact.jsonAbsolutePath);
+    const relativeCandidatesToBookRoot = path.relative(summary.bookRootPath, artifact.knowledgeCandidatesAbsolutePath);
+    const nextLatestKnowledgeCandidatesFile =
+      !path.isAbsolute(relativeCandidatesToBookRoot) && !relativeCandidatesToBookRoot.startsWith("..")
+        ? this.normalizeForYaml(relativeCandidatesToBookRoot)
+        : this.toDisplayPath(artifact.knowledgeCandidatesAbsolutePath);
+
+    const nextBookProtocol: BookProtocol = {
+      ...book,
+      knowledge_state: {
+        ...book.knowledge_state,
+        current_batch_review_status: "generated",
+      },
+      last_outputs: {
+        ...book.last_outputs,
+        latest_review_file: nextLatestReviewFile,
+        latest_review_data_file: nextLatestReviewDataFile,
+        latest_knowledge_candidates_file: nextLatestKnowledgeCandidatesFile,
+      },
+    };
+
+    fs.writeFileSync(summary.bookFilePath, YAML.stringify(nextBookProtocol), "utf8");
+  }
+
+  private persistResolvedBatchReviewState(summary: WorkProtocolSummary, book: BookProtocol): void {
+    const currentBatchId = this.readString(book.knowledge_state?.current_batch_id);
+    const shouldCompleteOpeningArc = typeof currentBatchId === "string" && currentBatchId.startsWith("opening-");
+    const nextBookProtocol: BookProtocol = {
+      ...book,
+      knowledge_state: {
+        ...book.knowledge_state,
+        current_batch_review_status: "resolved",
+        opening_arc_status: shouldCompleteOpeningArc ? "completed" : book.knowledge_state?.opening_arc_status,
+      },
+    };
+
+    fs.writeFileSync(summary.bookFilePath, YAML.stringify(nextBookProtocol), "utf8");
+  }
+
+  private normalizeBatchKnowledgePromotions(
+    candidateItems: KnowledgeItemRecord[],
+    promotions: BatchKnowledgePromotionDecision[] | undefined,
+  ): BatchKnowledgePromotionDecision[] {
+    if (promotions?.length) {
+      return promotions.filter((promotion) =>
+        candidateItems.some((item) => item.id === promotion.knowledgeItemId),
+      );
+    }
+
+    return candidateItems.map((item) => ({
+      knowledgeItemId: item.id,
+      targetStatus: "book_only",
+      applicationResult: "helpful",
+      note: "Default promotion after batch review resolution.",
+    }));
+  }
+
+  private normalizeBatchKnowledgeGateResults(
+    enabledGates: string[],
+    gateResults: BatchKnowledgeGateDecision[] | undefined,
+  ): BatchKnowledgeGateDecision[] {
+    if (gateResults?.length) {
+      const provided = new Map(gateResults.map((gate) => [gate.gateCode, gate]));
+      return enabledGates.map((gateCode) => {
+        const existing = provided.get(gateCode);
+        return (
+          existing ?? {
+            gateCode,
+            gateStatus: "passed",
+            note: "Resolved during batch knowledge closure.",
+          }
+        );
+      });
+    }
+
+    return enabledGates.map((gateCode) => ({
+      gateCode,
+      gateStatus: "passed",
+      note: "Resolved during batch knowledge closure.",
+    }));
+  }
+
+  private defaultApplicationResultForPromotion(
+    targetStatus: BatchKnowledgePromotionDecision["targetStatus"],
+  ): "helpful" | "neutral" | "harmful" {
+    if (targetStatus === "deprecated") {
+      return "harmful";
+    }
+    if (targetStatus === "validated_global") {
+      return "helpful";
+    }
+    return "neutral";
+  }
+
+  private mapKnowledgePromotionStatusToScope(
+    targetStatus: BatchKnowledgePromotionDecision["targetStatus"],
+  ): string {
+    if (targetStatus === "validated_global") {
+      return "global";
+    }
+    if (targetStatus === "book_only") {
+      return "book";
+    }
+    return "book";
+  }
+
+  private buildKnowledgeCandidatesArtifactData(
+    artifact: BatchReviewArtifactData,
+    sourceReviewJsonPath: string,
+  ): KnowledgeCandidatesArtifactData {
+    const evidencePaths = [...new Set(artifact.findings.map((finding) => finding.sourcePath).filter((value): value is string => Boolean(value)))];
+    const findingIds = artifact.findings.map((finding) => finding.id);
+
+    return {
+      artifactKind: "knowledge-candidates",
+      generatedAt: artifact.generatedAt,
+      workId: artifact.workId,
+      workSlug: artifact.workSlug,
+      workTitle: artifact.workTitle,
+      batchId: artifact.batchId,
+      sourceReviewJsonPath: this.toDisplayPath(sourceReviewJsonPath),
+      candidates: artifact.candidatePrompts.map((prompt, index) => ({
+        id: `${artifact.batchId ?? "batch"}-candidate-${index + 1}`,
+        status: "candidate",
+        suggestedScope: "pending",
+        sourceKind: "batch-review",
+        domain: this.inferCandidateDomain(prompt, artifact.enabledRuleSets),
+        priority: this.inferCandidatePriority(prompt, artifact.findings),
+        title: prompt,
+        summary: "来自当前批次复盘的候选写作经验，需要人工确认后再决定是否升级为通用规则或本书规则。",
+        rationale: "由系统根据当前批次复盘结果自动提炼，后续应通过复盘确认后再升级。",
+        prompt,
+        suggestedRuleSets: artifact.enabledRuleSets,
+        sourceFindingIds: findingIds,
+        evidencePaths,
+      })),
+    };
+  }
+  private buildBatchCandidatePrompts(
+    enabledRuleSets: string[],
+    knowledgeState: BookKnowledgeStateProtocol | undefined,
+  ): string[] {
+    const prompts: string[] = [];
+
+    if (enabledRuleSets.includes("continuity")) {
+      prompts.push("上一章章尾抛出的问题，下一章开头是否先接住了当场后果。");
+    }
+    if (enabledRuleSets.includes("exposition")) {
+      prompts.push("当前批次里，主角职业、当前处境、基础舞台关系是否仍然清楚。");
+    }
+    if (enabledRuleSets.includes("pacing")) {
+      prompts.push("这一批是否只堆谜团，还是已经出现了至少一次问题 -> 追查 -> 小兑现。");
+    }
+    if (enabledRuleSets.includes("opening-arc-repair") || this.readString(knowledgeState?.opening_arc_status) !== "completed") {
+      prompts.push("开篇弧线是否让读者在前三章内知道主角是谁、靠什么活、为什么不能出事。");
+    }
+
+    return prompts;
+  }
+  private mapRiskNatureToKnowledgeDomain(riskNature?: string): string {
+    switch (riskNature) {
+      case "factual-conflict":
+        return "continuity";
+      case "information-gap":
+        return "exposition";
+      case "confidence-review":
+        return "pacing";
+      case "format-blocker":
+        return "delivery";
+      default:
+        return "continuity";
+    }
+  }
+
+  private resolveGateStatus(
+    gateCode: string,
+    artifactData: BatchReviewArtifactData,
+    book: BookProtocol,
+  ): string {
+    if (gateCode === "batch_review_required") {
+      return artifactData.reviewRequired ? "pending" : "waived";
+    }
+
+    if (gateCode === "opening_arc_review") {
+      return this.readString(book.knowledge_state?.opening_arc_status) === "completed" ? "passed" : "pending";
+    }
+
+    if (gateCode === "continuity_review") {
+      return artifactData.findings.some((finding) => this.mapRiskNatureToKnowledgeDomain(finding.riskNature) === "continuity")
+        ? "pending"
+        : "passed";
+    }
+
+    if (gateCode === "meta_check") {
+      return "pending";
+    }
+
+    return "pending";
+  }
+
+  private resolveGateNote(
+    gateCode: string,
+    artifactData: BatchReviewArtifactData,
+    book: BookProtocol,
+  ): string {
+    if (gateCode === "batch_review_required") {
+      return artifactData.reviewRequired
+        ? "Current batch review is required and has been generated, but not yet manually resolved."
+        : "Current batch does not require a blocking review gate.";
+    }
+
+    if (gateCode === "opening_arc_review") {
+      return this.readString(book.knowledge_state?.opening_arc_status) === "completed"
+        ? "Opening arc review is already completed for this book."
+        : "Opening arc review is still in progress and should remain active.";
+    }
+
+    if (gateCode === "continuity_review") {
+      return artifactData.findings.some((finding) => this.mapRiskNatureToKnowledgeDomain(finding.riskNature) === "continuity")
+        ? "Continuity findings are still present in the current batch review."
+        : "No blocking continuity finding was detected in the current batch review.";
+    }
+
+    if (gateCode === "meta_check") {
+      return "Meta-language scan is still tracked outside the method ledger and should be confirmed separately.";
+    }
+
+    return "Gate status has been recorded but still needs an explicit resolution rule.";
+  }
+
+  private mapBlockingLevelToSeverity(blockingLevel: string): string {
+    switch (blockingLevel) {
+      case "conflict":
+        return "high";
+      case "review":
+        return "medium";
+      default:
+        return "low";
+    }
+  }
+
+  private mapSuggestedScopeToKnowledgeScope(suggestedScope: string): string {
+    switch (suggestedScope) {
+      case "global":
+        return "global";
+      case "book":
+        return "book";
+      default:
+        return "book";
+    }
+  }
+
+  private inferCandidateDomain(prompt: string, enabledRuleSets: string[]): string {
+    if (prompt.includes("上一章") || prompt.includes("次章") || prompt.includes("接住")) {
+      return "continuity";
+    }
+    if (prompt.includes("基础信息") || prompt.includes("职业") || prompt.includes("舞台") || prompt.includes("读者")) {
+      return "exposition";
+    }
+    if (prompt.includes("问题 -> 追查 -> 小兑现") || prompt.includes("小兑现") || prompt.includes("只堆谜团")) {
+      return "pacing";
+    }
+    if (prompt.includes("前三章") || prompt.includes("开篇")) {
+      return "opening-arc";
+    }
+    return enabledRuleSets[0] ?? "continuity";
+  }
+
+  private inferCandidatePriority(prompt: string, findings: BatchReviewFindingRecord[]): string {
+    if (prompt.includes("前三章") || prompt.includes("开篇")) {
+      return "high";
+    }
+    if (findings.some((finding) => finding.blockingLevel === "conflict")) {
+      return "high";
+    }
+    if (findings.some((finding) => finding.blockingLevel === "review")) {
+      return "medium";
+    }
+    return "low";
+  }
+
   private createTimestampStamp(): string {
     const now = new Date();
     const pad = (value: number) => String(value).padStart(2, "0");
@@ -710,6 +1864,14 @@ export class WorkspaceProtocolService {
     return typeof value === "number" && Number.isFinite(value) ? value : undefined;
   }
 
+  private readBoolean(value: unknown): boolean | undefined {
+    return typeof value === "boolean" ? value : undefined;
+  }
+
+  private readStringArray(value: unknown): string[] {
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+  }
+
   private toDisplayPath(targetPath: string): string {
     return this.normalizeForYaml(targetPath);
   }
@@ -728,6 +1890,17 @@ export class WorkspaceProtocolService {
 
   private normalizePath(targetPath: string): string {
     return path.normalize(targetPath).toLowerCase();
+  }
+
+  private createDefaultBatchId(activeVolume: number, activeChapter: number, batchSize: number): string {
+    const normalizedBatchSize = Math.max(batchSize, 1);
+    const batchNumber = Math.max(Math.ceil(activeChapter / normalizedBatchSize), 1);
+    return `volume-${activeVolume}-batch-${batchNumber}`;
+  }
+
+  private computeNextRequiredReviewAtChapter(activeChapter: number, batchSize: number): number {
+    const normalizedBatchSize = Math.max(batchSize, 1);
+    return Math.max(Math.ceil((activeChapter + 1) / normalizedBatchSize) * normalizedBatchSize, normalizedBatchSize);
   }
 }
 

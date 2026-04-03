@@ -1,7 +1,7 @@
 book_id: your-book-id
-title: 你的作品名
-genre: 待定
-platform: 待定
+title: 作品名
+genre: 题材
+platform: 目标平台
 stage: planning
 status: active
 
@@ -10,7 +10,7 @@ evaluation_policy:
   override_stop_loss_word_count:
 
 active_volume: 1
-active_chapter: 1
+active_chapter: 0
 
 paths:
   root_dir: .
@@ -28,17 +28,66 @@ source_of_truth:
 
 current_focus:
   task_type: planning
-  task_label: 确定作品方向
-  goal: 明确作品定位、核心设定和卷一方向
-  summary: 先和 Codex 把这本书的题材、卖点、角色与开篇方向定下来。
-
+  task_label: 整卷先规划
+  goal: 先完成整卷功能、阶段事件、节奏配比，再开始正文
+  summary: 不再按“写几章补几章”的方式推进，正文只能建立在完整骨架之后。
 hard_constraints: []
 
+planning_budget:
+  chapter_target_chars:
+    min: 2000
+    max: 2500
+  volume_target:
+    chapters_min: 0
+    chapters_max: 0
+    chars_min: 0
+    chars_max: 0
+  budget_gate:
+    require_check_before_next_batch: true
+    current_status: pending
+
+prewrite_gate:
+  require_full_volume_plan_before_drafting: true
+  current_volume_plan_complete: false
+  current_stage_map_complete: false
+  current_chapter_function_mix_defined: false
+  current_transition_daily_slots_defined: false
+  current_batch_ready_to_write: false
+
+rhythm_plan:
+  chapter_function_mix:
+    main_push: 35-45%
+    transition: 15-25%
+    relationship: 10-20%
+    daily_life: 10-15%
+    information: 10-15%
+    payoff: 5-10%
+  hard_rules:
+    - 强钩子次章必须先接，不允许直接跳到第二天。
+    - 每个阶段至少保留一章关系章和一章日常/缓冲章。
+    - 基础信息要早清楚，核心真相可以后置。
+    - 每章先定义功能，再决定是否进入正文。
+
+knowledge_state:
+  inherit_workspace_workflow: true
+  active_global_profile: default-global
+  active_book_profile: default-book
+  current_batch_id:
+  current_batch_review_required: true
+  current_batch_review_status: pending
+  opening_arc_status: pending
+  next_required_review_at_chapter: 3
+  enabled_rule_sets:
+    - continuity
+    - opening-arc
+    - exposition
+    - pacing
+
 last_outputs:
-  latest_chapter_file: 02-正文/0001.md
-  latest_summary_file: 03-中间产物/latest-summary.md
-  latest_review_file: 03-中间产物/latest-review.md
-  latest_sync_source: 02-正文/0001.md
+  latest_chapter_file:
+  latest_summary_file:
+  latest_review_file:
+  latest_sync_source:
 
 sync:
   auto_sync_enabled: true
