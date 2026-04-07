@@ -8,8 +8,8 @@ import { ensureSqliteV2Bootstrap } from "../../v2/bootstrap";
 import {
   chapterScenesV2Table,
   chaptersV2Table,
-  characterRelationshipsV2Table,
-  charactersV2Table,
+  entitiesV2Table,
+  entityEdgesV2Table,
   foreshadowsV2Table,
   timelineEventsV2Table,
   volumesV2Table,
@@ -36,26 +36,21 @@ export class SqliteNarrativeAssetRepository implements NarrativeAssetRepository 
 
     const timestamp = nowIsoString();
     const [existingCharacter] = await this.client.db
-      .select({ createdAt: charactersV2Table.createdAt, version: charactersV2Table.version })
-      .from(charactersV2Table)
-      .where(eq(charactersV2Table.id, character.id))
+      .select({ createdAt: entitiesV2Table.createdAt, version: entitiesV2Table.version })
+      .from(entitiesV2Table)
+      .where(eq(entitiesV2Table.id, character.id))
       .limit(1);
 
     await this.client.db.transaction(async (tx) => {
       await tx
-        .insert(charactersV2Table)
+        .insert(entitiesV2Table)
         .values({
           id: character.id,
           projectId: character.workId,
-          name: character.name,
-          roleType: character.role,
-          archetype: character.archetype,
-          publicIdentity: character.publicIdentity,
-          hiddenIdentity: character.hiddenIdentity ?? null,
-          coreDesire: character.coreDesire,
-          coreFear: character.coreFear,
-          growthArc: character.growthArc,
-          speechGuide: character.speechStyle,
+          entityType: "character",
+          canonicalName: character.name,
+          displayName: character.name,
+          summary: character.publicIdentity,
           ...buildLifecycleValues({
             existing: existingCharacter,
             status: "active",
@@ -65,6 +60,14 @@ export class SqliteNarrativeAssetRepository implements NarrativeAssetRepository 
               actorId: context?.actorId ?? null,
             },
             extraJson: {
+              role: character.role,
+              archetype: character.archetype,
+              publicIdentity: character.publicIdentity,
+              hiddenIdentity: character.hiddenIdentity ?? null,
+              coreDesire: character.coreDesire,
+              coreFear: character.coreFear,
+              growthArc: character.growthArc,
+              speechStyle: character.speechStyle,
               strengths: character.strengths,
               flaws: character.flaws,
               secrets: character.secrets,
@@ -72,18 +75,13 @@ export class SqliteNarrativeAssetRepository implements NarrativeAssetRepository 
           }),
         })
         .onConflictDoUpdate({
-          target: charactersV2Table.id,
+          target: entitiesV2Table.id,
           set: {
             projectId: character.workId,
-            name: character.name,
-            roleType: character.role,
-            archetype: character.archetype,
-            publicIdentity: character.publicIdentity,
-            hiddenIdentity: character.hiddenIdentity ?? null,
-            coreDesire: character.coreDesire,
-            coreFear: character.coreFear,
-            growthArc: character.growthArc,
-            speechGuide: character.speechStyle,
+            entityType: "character",
+            canonicalName: character.name,
+            displayName: character.name,
+            summary: character.publicIdentity,
             ...buildLifecycleValues({
               existing: existingCharacter,
               status: "active",
@@ -93,6 +91,14 @@ export class SqliteNarrativeAssetRepository implements NarrativeAssetRepository 
                 actorId: context?.actorId ?? null,
               },
               extraJson: {
+                role: character.role,
+                archetype: character.archetype,
+                publicIdentity: character.publicIdentity,
+                hiddenIdentity: character.hiddenIdentity ?? null,
+                coreDesire: character.coreDesire,
+                coreFear: character.coreFear,
+                growthArc: character.growthArc,
+                speechStyle: character.speechStyle,
                 strengths: character.strengths,
                 flaws: character.flaws,
                 secrets: character.secrets,
@@ -101,19 +107,20 @@ export class SqliteNarrativeAssetRepository implements NarrativeAssetRepository 
           },
         });
 
-      await tx.delete(characterRelationshipsV2Table).where(eq(characterRelationshipsV2Table.sourceCharacterId, character.id));
+      await tx.delete(entityEdgesV2Table).where(eq(entityEdgesV2Table.sourceEntityId, character.id));
 
       if (character.relationships.length) {
-        await tx.insert(characterRelationshipsV2Table).values(
+        await tx.insert(entityEdgesV2Table).values(
           character.relationships.map((relationship, index) => ({
             id: buildCharacterRelationshipId(character.id, relationship.targetCharacterId, index),
             projectId: character.workId,
-            sourceCharacterId: character.id,
-            targetCharacterId: relationship.targetCharacterId,
+            sourceEntityId: character.id,
+            targetEntityId: relationship.targetCharacterId,
+            edgeType: "character_relationship",
             publicLabel: relationship.publicLabel,
             privateLabel: relationship.privateLabel ?? null,
-            trustLevel: relationship.trustLevel,
-            tensionLevel: relationship.tensionLevel,
+            directionality: "directed",
+            weight: relationship.trustLevel,
             ...buildLifecycleValues({
               status: "active",
               timestamp,
@@ -121,6 +128,7 @@ export class SqliteNarrativeAssetRepository implements NarrativeAssetRepository 
                 source: context?.source ?? "narrative-asset",
               },
               extraJson: {
+                tensionLevel: relationship.tensionLevel,
                 notes: relationship.notes,
               },
             }),
@@ -413,9 +421,9 @@ export class SqliteNarrativeAssetRepository implements NarrativeAssetRepository 
 
     const characterRows = await this.client.db
       .select()
-      .from(charactersV2Table)
-      .where(eq(charactersV2Table.projectId, projectId))
-      .orderBy(asc(charactersV2Table.name));
+      .from(entitiesV2Table)
+      .where(and(eq(entitiesV2Table.projectId, projectId), eq(entitiesV2Table.entityType, "character")))
+      .orderBy(asc(entitiesV2Table.displayName));
 
     if (!characterRows.length) {
       return [];
@@ -424,22 +432,24 @@ export class SqliteNarrativeAssetRepository implements NarrativeAssetRepository 
     const characterIds = characterRows.map((characterRow) => characterRow.id);
     const relationshipRows = await this.client.db
       .select()
-      .from(characterRelationshipsV2Table)
-      .where(inArray(characterRelationshipsV2Table.sourceCharacterId, characterIds))
-      .orderBy(asc(characterRelationshipsV2Table.sourceCharacterId));
+      .from(entityEdgesV2Table)
+      .where(and(inArray(entityEdgesV2Table.sourceEntityId, characterIds), eq(entityEdgesV2Table.edgeType, "character_relationship")))
+      .orderBy(asc(entityEdgesV2Table.sourceEntityId));
 
     const relationshipsByCharacterId = new Map<string, CharacterCard["relationships"]>();
     for (const relationshipRow of relationshipRows) {
-      const existingRelationships = relationshipsByCharacterId.get(relationshipRow.sourceCharacterId) ?? [];
+      const relationshipExtraJson = relationshipRow.extraJson as Record<string, unknown>;
+      const existingRelationships = relationshipsByCharacterId.get(relationshipRow.sourceEntityId) ?? [];
       existingRelationships.push({
-        targetCharacterId: relationshipRow.targetCharacterId,
+        targetCharacterId: relationshipRow.targetEntityId,
         publicLabel: relationshipRow.publicLabel,
         privateLabel: relationshipRow.privateLabel ?? undefined,
-        trustLevel: relationshipRow.trustLevel,
-        tensionLevel: relationshipRow.tensionLevel,
-        notes: readStringArray((relationshipRow.extraJson as Record<string, unknown>).notes),
+        trustLevel: relationshipRow.weight,
+        tensionLevel:
+          typeof relationshipExtraJson.tensionLevel === "number" ? relationshipExtraJson.tensionLevel : 0,
+        notes: readStringArray(relationshipExtraJson.notes),
       });
-      relationshipsByCharacterId.set(relationshipRow.sourceCharacterId, existingRelationships);
+      relationshipsByCharacterId.set(relationshipRow.sourceEntityId, existingRelationships);
     }
 
     return characterRows.map((characterRow) => {
@@ -447,18 +457,18 @@ export class SqliteNarrativeAssetRepository implements NarrativeAssetRepository 
       return {
         id: characterRow.id,
         workId: characterRow.projectId,
-        name: characterRow.name,
-        role: characterRow.roleType,
-        archetype: characterRow.archetype,
-        publicIdentity: characterRow.publicIdentity,
-        hiddenIdentity: characterRow.hiddenIdentity ?? undefined,
-        coreDesire: characterRow.coreDesire,
-        coreFear: characterRow.coreFear,
+        name: characterRow.displayName,
+        role: typeof extraJson.role === "string" ? extraJson.role : "角色",
+        archetype: typeof extraJson.archetype === "string" ? extraJson.archetype : "未定义",
+        publicIdentity: typeof extraJson.publicIdentity === "string" ? extraJson.publicIdentity : characterRow.summary ?? "",
+        hiddenIdentity: typeof extraJson.hiddenIdentity === "string" ? extraJson.hiddenIdentity : undefined,
+        coreDesire: typeof extraJson.coreDesire === "string" ? extraJson.coreDesire : "",
+        coreFear: typeof extraJson.coreFear === "string" ? extraJson.coreFear : "",
         strengths: readStringArray(extraJson.strengths),
         flaws: readStringArray(extraJson.flaws),
         secrets: readStringArray(extraJson.secrets),
-        speechStyle: characterRow.speechGuide,
-        growthArc: characterRow.growthArc,
+        speechStyle: readStringArray(extraJson.speechStyle),
+        growthArc: typeof extraJson.growthArc === "string" ? extraJson.growthArc : "",
         relationships: relationshipsByCharacterId.get(characterRow.id) ?? [],
       };
     });
@@ -524,4 +534,3 @@ export class SqliteNarrativeAssetRepository implements NarrativeAssetRepository 
     });
   }
 }
-

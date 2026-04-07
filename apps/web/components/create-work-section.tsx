@@ -15,7 +15,7 @@ const text = {
   copy: "先填书名、题材、平台和一句话卖点。正文、大纲和设定，进作品页再继续补。",
   close: "关闭",
   titleLabel: "作品标题",
-  titlePlaceholder: "例如：末站执灯人",
+  titlePlaceholder: "例如：你的新书名",
   genreLabel: "主类型",
   genrePlaceholder: "玄幻 / 都市 / 悬疑",
   platformLabel: "目标平台",

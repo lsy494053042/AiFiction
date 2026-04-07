@@ -1,4 +1,5 @@
 export * from "./artifact.repository";
+export * from "./generic-entity.repository";
 export * from "./knowledge-method.repository";
 export * from "./memory-snapshot.repository";
 export * from "./narrative-asset.repository";

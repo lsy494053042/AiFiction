@@ -1,4 +1,4 @@
-book_id: your-book-id
+﻿book_id: your-book-id
 title: 作品名
 genre: 题材
 platform: 目标平台
@@ -68,6 +68,31 @@ rhythm_plan:
     - 基础信息要早清楚，核心真相可以后置。
     - 每章先定义功能，再决定是否进入正文。
 
+execution_controls:
+  planning_first:
+    required_prewrite_sequence:
+      - full-volume-plan
+      - stage-map
+      - chapter-function-mix
+      - transition-and-daily-slots
+      - current-batch-outline
+  verification_before_completion:
+    require_evidence_before_mark_done: true
+    required_after_current_batch:
+      - writing:meta-check
+      - writing:budget-check
+  root_cause_first:
+    require_issue_classification_before_rewrite: true
+    allowed_rewrite_triggers:
+      - planning-gap
+      - continuity-gap
+      - anchor-gap
+      - knowledge-layer-gap
+      - exposition-gap
+      - pacing-gap
+      - volume-budget-gap
+      - execution-bug
+
 knowledge_state:
   inherit_workspace_workflow: true
   active_global_profile: default-global
@@ -80,6 +105,7 @@ knowledge_state:
   enabled_rule_sets:
     - continuity
     - opening-arc
+    - anchoring
     - exposition
     - pacing
 
@@ -107,3 +133,5 @@ proposal_commit:
     - timeline-conflict
     - major-relationship-shift
     - rule-break
+
+

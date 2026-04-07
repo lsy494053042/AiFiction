@@ -7,10 +7,10 @@ import { resolveWorkspaceRoot } from "./client";
 import { WorkspaceProtocolService, type WorkspaceProtocol } from "./protocol";
 import { SqliteKnowledgeMethodRepository } from "./repositories/v2";
 
-function resolveSmokeSlug(): string {
+function resolveSmokeSlug(): string | undefined {
   const workspaceFilePath = path.join(resolveWorkspaceRoot(), "workspace.yml");
   if (!fs.existsSync(workspaceFilePath)) {
-    throw new Error("workspace.yml 不存在，无法确定协议 smoke 要使用的作品。");
+    throw new Error("workspace.yml 不存在，无法运行协议 smoke。");
   }
 
   const raw = fs.readFileSync(workspaceFilePath, "utf8");
@@ -18,7 +18,7 @@ function resolveSmokeSlug(): string {
   const slug = workspace?.active_book_id ?? workspace?.default_book_id ?? workspace?.book_index?.[0]?.book_id;
 
   if (!slug) {
-    throw new Error("workspace.yml 里没有 active/default 作品，无法运行协议 smoke。");
+    return undefined;
   }
 
   return slug;
@@ -28,6 +28,11 @@ async function main() {
   const service = new WorkspaceProtocolService();
   const knowledgeMethodRepository = new SqliteKnowledgeMethodRepository();
   const slug = resolveSmokeSlug();
+
+  if (!slug) {
+    console.log("[AiFiction Protocol] No active book configured. Empty workspace smoke passed.");
+    return;
+  }
 
   const bootstrapped = await service.bootstrapWorkProtocolBySlug(slug);
   if (!bootstrapped) {
@@ -117,10 +122,31 @@ async function main() {
   if (!writingPackContent.includes("profile")) {
     throw new Error("Writing pack does not include knowledge workflow section.");
   }
+  if (!writingPackContent.includes("当前是否允许继续正文")) {
+    throw new Error("Writing pack does not include drafting gate assessment.");
+  }
+  if (!writingPackContent.includes("gate 状态")) {
+    throw new Error("Writing pack does not include gate status section.");
+  }
+  if (!writingPackContent.includes("当前相关通用实体")) {
+    throw new Error("Writing pack does not include generic entity projection section.");
+  }
+  if (!writingPackContent.includes("标签投影")) {
+    throw new Error("Writing pack does not include tag taxonomy projection section.");
+  }
+  if (!writingPackContent.includes("任务与匹配投影")) {
+    throw new Error("Writing pack does not include task projection section.");
+  }
 
   const initialWritingPackContent = fs.readFileSync(initialWritingPack.absolutePath, "utf8");
   if (!initialWritingPackContent.includes("profile")) {
     throw new Error("Initial writing pack does not include knowledge workflow section.");
+  }
+  if (!initialWritingPackContent.includes("当前是否允许继续正文")) {
+    throw new Error("Initial writing pack does not include drafting gate assessment.");
+  }
+  if (!initialWritingPackContent.includes("当前相关通用实体")) {
+    throw new Error("Initial writing pack does not include generic entity projection section.");
   }
 
   if (!writingPackContent.includes("latest-knowledge-candidates.json")) {
@@ -152,6 +178,27 @@ async function main() {
 
   if (!Array.isArray(batchReviewData.findings) || !Array.isArray(batchReviewData.candidatePrompts)) {
     throw new Error("Batch review JSON artifact is missing structured findings or candidate prompts.");
+  }
+
+  if (
+    !batchReviewData.candidatePrompts.some(
+      (prompt) => typeof prompt === "string" && prompt.includes("当前批次最主要的问题先归类为"),
+    )
+  ) {
+    throw new Error("Batch review JSON artifact is missing root-cause-first prompt.");
+  }
+
+  if (
+    !batchReviewData.findings.some(
+      (finding) =>
+        typeof finding === "object" &&
+        finding !== null &&
+        "riskNature" in finding &&
+        (((finding as { riskNature?: unknown }).riskNature === "anchor-gap") ||
+          ((finding as { riskNature?: unknown }).riskNature === "knowledge-layer-gap")),
+    )
+  ) {
+    throw new Error("Batch review JSON artifact is missing structured anchoring findings.");
   }
 
   if (summary.book?.knowledge_state?.current_batch_review_status !== "resolved") {
@@ -250,3 +297,4 @@ main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+

@@ -5,6 +5,7 @@ import type { DraftArtifact, WorkProfile } from "@aifiction/schemas";
 import { getSqliteClient } from "./client";
 import {
   SqliteArtifactRepository,
+  SqliteGenericEntityRepository,
   SqliteMemorySnapshotRepository,
   SqliteNarrativeAssetRepository,
   SqlitePipelineRunRepository,
@@ -12,17 +13,20 @@ import {
   SqlitePromptRegistryRepository,
 } from "./repositories/v2";
 import { ensureSqliteV2Bootstrap } from "./v2/bootstrap";
+import { GenericEntityWorkbenchService } from "./workbench";
 
 async function main() {
   const client = getSqliteClient();
   const databasePath = await ensureSqliteV2Bootstrap(client);
 
   const projectRepository = new SqliteProjectCatalogRepository(client);
+  const genericEntityRepository = new SqliteGenericEntityRepository(client);
   const narrativeRepository = new SqliteNarrativeAssetRepository(client);
   const snapshotRepository = new SqliteMemorySnapshotRepository(client);
   const artifactRepository = new SqliteArtifactRepository(client);
   const pipelineRunRepository = new SqlitePipelineRunRepository(client);
   const promptRegistryRepository = new SqlitePromptRegistryRepository(client);
+  const genericEntityWorkbenchService = new GenericEntityWorkbenchService(client);
 
   const work: WorkProfile = {
     id: "demo-work-v2",
@@ -69,6 +73,7 @@ async function main() {
       source: "v2-smoke",
     },
   );
+
   await narrativeRepository.saveCharacter(
     {
       id: "character-v2-hero",
@@ -85,22 +90,238 @@ async function main() {
       secrets: ["体内埋有未觉醒的古火种"],
       speechStyle: ["说话短促", "极少主动解释"],
       growthArc: "从只求自保成长为主动点燃秩序的人",
-      relationships: [
-        {
-          targetCharacterId: "character-v2-mentor",
-          publicLabel: "债主",
-          privateLabel: "引路人",
-          trustLevel: 35,
-          tensionLevel: 60,
-          notes: ["互相提防，但目标暂时一致"],
-        },
-      ],
+      relationships: [],
     },
     {
       source: "v2-smoke",
     },
   );
 
+  await genericEntityRepository.saveEntity(
+    {
+      id: "faction-v2-cinder-guild",
+      projectId: work.id,
+      entityType: "faction",
+      canonicalName: "灰烬会",
+      displayName: "灰烬会",
+      summary: "边境火种和违禁物资交易的灰色中介组织。",
+      extraJson: {
+        publicPosition: "矿镇外围中介",
+        hiddenPosition: "旧火线情报节点",
+      },
+    },
+    {
+      source: "v2-smoke",
+    },
+  );
+  await genericEntityRepository.replaceEntityAliases(
+    "faction-v2-cinder-guild",
+    [
+      {
+        alias: "灰会",
+        aliasType: "short-name",
+        sortOrder: 1,
+      },
+    ],
+    {
+      source: "v2-smoke",
+    },
+  );
+  await genericEntityRepository.replaceEntityEdges(
+    work.id,
+    "character-v2-hero",
+    [
+      {
+        targetEntityId: "character-v2-mentor",
+        edgeType: "character_relationship",
+        publicLabel: "债主",
+        privateLabel: "引路人",
+        directionality: "directed",
+        weight: 35,
+        extraJson: {
+          tensionLevel: 60,
+          notes: ["互相提防，但目标暂时一致"],
+        },
+      },
+      {
+        targetEntityId: "faction-v2-cinder-guild",
+        edgeType: "faction_attention",
+        publicLabel: "被盯上",
+        privateLabel: "继火观察对象",
+        directionality: "directed",
+        weight: 55,
+        extraJson: {
+          watchLevel: "medium",
+        },
+      },
+    ],
+    {
+      source: "v2-smoke",
+    },
+  );
+
+  await genericEntityRepository.savePanelTemplate(
+    {
+      id: "panel-template-v2-character-core",
+      ownerKey: `project:${work.id}`,
+      projectId: work.id,
+      scope: "project",
+      templateKey: "character-core",
+      label: "角色核心面板",
+      appliesToEntityType: "character",
+      description: "用于验证通用面板模板、字段和值链路。",
+    },
+    {
+      source: "v2-smoke",
+    },
+  );
+  await genericEntityRepository.replacePanelFields(
+    "panel-template-v2-character-core",
+    [
+      {
+        fieldKey: "clearance_level",
+        label: "权限等级",
+        valueType: "integer",
+        cardinality: "single",
+        sortOrder: 1,
+        displayGroup: "systems",
+        isSearchable: true,
+        isFilterable: true,
+        isTimelineTracked: true,
+      },
+      {
+        fieldKey: "ember_stability",
+        label: "火种稳定度",
+        valueType: "number",
+        cardinality: "single",
+        sortOrder: 2,
+        displayGroup: "systems",
+        isSearchable: true,
+        isFilterable: true,
+        isTimelineTracked: true,
+      },
+    ],
+    {
+      source: "v2-smoke",
+    },
+  );
+  await genericEntityRepository.replaceEntityPanelValues(
+    work.id,
+    "character-v2-hero",
+    "panel-template-v2-character-core",
+    [
+      {
+        fieldId: "panel-template-v2-character-core:field:clearance_level",
+        valueInteger: 2,
+      },
+      {
+        fieldId: "panel-template-v2-character-core:field:ember_stability",
+        valueNumber: 0.61,
+      },
+    ],
+    {
+      source: "v2-smoke",
+    },
+  );
+  await genericEntityRepository.saveTagTaxonomy(
+    {
+      id: "taxonomy-v2-aptitude",
+      ownerKey: `project:${work.id}`,
+      projectId: work.id,
+      scope: "project",
+      taxonomyKey: "aptitude",
+      label: "角色能力标签",
+      description: "用于验证实体标签和分类能力。",
+    },
+    {
+      source: "v2-smoke",
+    },
+  );
+  await genericEntityRepository.replaceEntityTags(
+    work.id,
+    "character-v2-hero",
+    "taxonomy-v2-aptitude",
+    [
+      {
+        tagCode: "ember-affinity",
+        tagLabel: "火种亲和",
+        weight: 90,
+      },
+      {
+        tagCode: "risk-sense",
+        tagLabel: "危险感知",
+        weight: 78,
+      },
+    ],
+    {
+      source: "v2-smoke",
+    },
+  );
+
+  await genericEntityRepository.saveTaskTemplate(
+    {
+      id: "task-template-v2-vault-recon",
+      ownerKey: `project:${work.id}`,
+      projectId: work.id,
+      scope: "project",
+      templateKey: "vault-recon",
+      label: "火库侦察",
+      taskType: "recon",
+      description: "验证任务模板、要求、指派和匹配链路。",
+    },
+    {
+      source: "v2-smoke",
+    },
+  );
+  await genericEntityRepository.replaceTaskRequirements(
+    "task-template-v2-vault-recon",
+    [
+      {
+        requirementKey: "need-ember-affinity",
+        requirementType: "tag-weight",
+        targetKey: "ember-affinity",
+        expectedNumber: 70,
+        weight: 70,
+        sortOrder: 1,
+      },
+      {
+        requirementKey: "need-clearance",
+        requirementType: "panel-number",
+        targetKey: "clearance_level",
+        expectedNumber: 2,
+        weight: 30,
+        sortOrder: 2,
+      },
+    ],
+    {
+      source: "v2-smoke",
+    },
+  );
+  await genericEntityRepository.saveTaskAssignment(
+    {
+      projectId: work.id,
+      taskTemplateId: "task-template-v2-vault-recon",
+      entityId: "character-v2-hero",
+      assignmentStatus: "assigned",
+      rationale: "顾徊是当前唯一同时满足火种亲和和最低权限门槛的人。",
+    },
+    {
+      source: "v2-smoke",
+    },
+  );
+  await genericEntityRepository.saveEntityTaskMatch(
+    {
+      projectId: work.id,
+      taskTemplateId: "task-template-v2-vault-recon",
+      entityId: "character-v2-hero",
+      matchScore: 0.84,
+      matchLabel: "recommended",
+      reasonsJson: ["火种亲和权重高", "权限等级满足最低要求"],
+    },
+    {
+      source: "v2-smoke",
+    },
+  );
   await narrativeRepository.saveVolume(
     {
       id: "volume-v2-1",
@@ -211,6 +432,23 @@ async function main() {
     source: "v2-smoke",
   });
 
+  await genericEntityRepository.saveEntityStateEvent(
+    {
+      projectId: work.id,
+      entityId: "character-v2-hero",
+      fieldId: "panel-template-v2-character-core:field:ember_stability",
+      chapterId: "chapter-v2-1",
+      eventType: "stability_drop",
+      reason: "首次接触残火导致稳定度下降。",
+      oldValueJson: 0.88,
+      newValueJson: 0.61,
+      sourceArtifactId: `${work.id}:chapter:chapter-v2-1:artifact:draft:version:1`,
+    },
+    {
+      source: "v2-smoke",
+    },
+  );
+
   const runId = await pipelineRunRepository.startRun({
     projectId: work.id,
     scopeType: "chapter",
@@ -249,6 +487,7 @@ async function main() {
   });
 
   const projects = await projectRepository.listProjects({ limit: 10 });
+  const entities = await genericEntityWorkbenchService.listEntities(work.id);
   const characters = await narrativeRepository.listCharacters(work.id);
   const chapters = await narrativeRepository.listChapters(work.id, "volume-v2-1");
   const artifacts = await artifactRepository.listArtifactVersions("chapter-v2-1", "draft");
@@ -257,13 +496,21 @@ async function main() {
     entityType: "character",
     entityId: "character-v2-hero",
   });
+  const heroBundle = await genericEntityWorkbenchService.getEntityBundle("character-v2-hero");
+  const taskBundle = await genericEntityWorkbenchService.getTaskBundle("task-template-v2-vault-recon");
 
   console.log(`[AiFiction Data] SQLite path: ${databasePath}`);
   console.log(`[AiFiction Data] V2 projects: ${projects.length}`);
+  console.log(`[AiFiction Data] V2 entities: ${entities.length}`);
   console.log(`[AiFiction Data] V2 characters: ${characters.length}`);
   console.log(`[AiFiction Data] V2 chapters in volume 1: ${chapters.length}`);
   console.log(`[AiFiction Data] V2 artifact versions: ${artifacts.length}`);
   console.log(`[AiFiction Data] V2 snapshots: ${snapshots.length}`);
+  console.log(`[AiFiction Data] V2 panel values: ${heroBundle?.panelValues.length ?? 0}`);
+  console.log(`[AiFiction Data] V2 entity tags: ${heroBundle?.tags.length ?? 0}`);
+  console.log(`[AiFiction Data] V2 entity edges: ${heroBundle?.edges.length ?? 0}`);
+  console.log(`[AiFiction Data] V2 task requirements: ${taskBundle?.requirements.length ?? 0}`);
+  console.log(`[AiFiction Data] V2 task matches: ${taskBundle?.matches.length ?? 0}`);
   console.log(`[AiFiction Data] Latest project: ${projects[0]?.title ?? "N/A"}`);
   console.log(`[AiFiction Data] Latest chapter: ${chapters[0]?.title ?? "N/A"}`);
 }
@@ -273,5 +520,3 @@ main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
-
-

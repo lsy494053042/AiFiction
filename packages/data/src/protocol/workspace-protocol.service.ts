@@ -48,6 +48,29 @@ interface WorkspaceKnowledgeWorkflowPromotionPolicyProtocol {
   validated_global_after_book_hits?: number;
 }
 
+interface WorkspaceExecutionPolicyPlanningFirstProtocol {
+  require_full_volume_plan_before_drafting?: boolean;
+  require_stage_map_before_batch_drafting?: boolean;
+  require_current_batch_outline_before_drafting?: boolean;
+}
+
+interface WorkspaceExecutionPolicyVerificationProtocol {
+  require_evidence_before_mark_done?: boolean;
+  required_after_batch?: string[];
+  required_before_claiming_completion?: string[];
+}
+
+interface WorkspaceExecutionPolicyRootCauseProtocol {
+  require_issue_classification_before_rewrite?: boolean;
+  default_categories?: string[];
+}
+
+interface WorkspaceExecutionPolicyProtocol {
+  planning_first?: WorkspaceExecutionPolicyPlanningFirstProtocol;
+  verification_before_completion?: WorkspaceExecutionPolicyVerificationProtocol;
+  root_cause_first?: WorkspaceExecutionPolicyRootCauseProtocol;
+}
+
 export interface WorkspaceKnowledgeWorkflowProtocol {
   batch_size?: number;
   require_batch_review_before_next_batch?: boolean;
@@ -69,6 +92,7 @@ export interface WorkspaceProtocol {
   book_index: WorkspaceBookIndexEntry[];
   defaults?: WorkspaceDefaults;
   knowledge_workflow?: WorkspaceKnowledgeWorkflowProtocol;
+  execution_policy?: WorkspaceExecutionPolicyProtocol;
   task_routing?: Record<string, Record<string, unknown>>;
 }
 
@@ -128,6 +152,26 @@ export interface BookKnowledgeStateProtocol {
   enabled_rule_sets?: string[];
 }
 
+interface BookExecutionControlsPlanningFirstProtocol {
+  required_prewrite_sequence?: string[];
+}
+
+interface BookExecutionControlsVerificationProtocol {
+  require_evidence_before_mark_done?: boolean;
+  required_after_current_batch?: string[];
+}
+
+interface BookExecutionControlsRootCauseProtocol {
+  require_issue_classification_before_rewrite?: boolean;
+  allowed_rewrite_triggers?: string[];
+}
+
+interface BookExecutionControlsProtocol {
+  planning_first?: BookExecutionControlsPlanningFirstProtocol;
+  verification_before_completion?: BookExecutionControlsVerificationProtocol;
+  root_cause_first?: BookExecutionControlsRootCauseProtocol;
+}
+
 export interface BookProtocol {
   book_id: string;
   title: string;
@@ -141,6 +185,7 @@ export interface BookProtocol {
   source_of_truth?: BookSourceOfTruthProtocol;
   current_focus?: BookCurrentFocusProtocol;
   hard_constraints?: string[];
+  execution_controls?: BookExecutionControlsProtocol;
   knowledge_state?: BookKnowledgeStateProtocol;
   last_outputs?: BookLastOutputsProtocol;
   sync?: BookSyncProtocol;
@@ -301,6 +346,12 @@ interface KnowledgeCandidatesArtifactData {
   candidates: KnowledgeCandidateRecord[];
 }
 
+interface WritingPackGateStatusRecord {
+  gateCode: string;
+  gateStatus: string;
+  note?: string;
+}
+
 export class WorkspaceProtocolService {
   private readonly workspaceRoot: string;
   private readonly knowledgeMethodRepository: SqliteKnowledgeMethodRepository;
@@ -421,7 +472,8 @@ export class WorkspaceProtocolService {
 
     const book = summary.book!;
     const knowledgeItems = await this.loadKnowledgeItemsForWritingPack(summary, snapshot.work.id, book);
-    const content = this.buildWritingPackMarkdown(summary, snapshot, book, knowledgeItems);
+    const gateStatuses = await this.loadWritingPackGateStatuses(summary, snapshot.work.id, book);
+    const content = this.buildWritingPackMarkdown(summary, snapshot, book, knowledgeItems, gateStatuses);
     const pack = this.writeContextPack(summary, "writing-pack", content);
     await this.persistKnowledgeApplications(summary, snapshot.work.id, book, knowledgeItems, "writing-pack");
     return pack;
@@ -781,7 +833,37 @@ export class WorkspaceProtocolService {
         enabled_gates:
           current?.knowledge_workflow?.enabled_gates?.length
             ? current.knowledge_workflow.enabled_gates
-            : ["batch-review-required", "meta-language-check", "continuity-review", "opening-arc-review"],
+            : ["batch-review-required", "meta-language-check", "continuity-review", "anchoring-review", "opening-arc-review"],
+      },
+      execution_policy: {
+        planning_first: {
+          require_full_volume_plan_before_drafting:
+            current?.execution_policy?.planning_first?.require_full_volume_plan_before_drafting ?? true,
+          require_stage_map_before_batch_drafting:
+            current?.execution_policy?.planning_first?.require_stage_map_before_batch_drafting ?? true,
+          require_current_batch_outline_before_drafting:
+            current?.execution_policy?.planning_first?.require_current_batch_outline_before_drafting ?? true,
+        },
+        verification_before_completion: {
+          require_evidence_before_mark_done:
+            current?.execution_policy?.verification_before_completion?.require_evidence_before_mark_done ?? true,
+          required_after_batch:
+            current?.execution_policy?.verification_before_completion?.required_after_batch?.length
+              ? current.execution_policy.verification_before_completion.required_after_batch
+              : ["writing:meta-check", "writing:budget-check"],
+          required_before_claiming_completion:
+            current?.execution_policy?.verification_before_completion?.required_before_claiming_completion?.length
+              ? current.execution_policy.verification_before_completion.required_before_claiming_completion
+              : ["encoding:check", "db:protocol-smoke"],
+        },
+        root_cause_first: {
+          require_issue_classification_before_rewrite:
+            current?.execution_policy?.root_cause_first?.require_issue_classification_before_rewrite ?? true,
+          default_categories:
+            current?.execution_policy?.root_cause_first?.default_categories?.length
+              ? current.execution_policy.root_cause_first.default_categories
+              : ["planning-gap", "continuity-gap", "anchor-gap", "knowledge-layer-gap", "exposition-gap", "pacing-gap", "volume-budget-gap", "execution-bug"],
+        },
       },
       task_routing: current?.task_routing ?? {
         create_book: {
@@ -853,6 +935,30 @@ export class WorkspaceProtocolService {
         summary: existing?.current_focus?.summary ?? "继续推进当前主线，确保结构化事实与正文同步。",
       },
       hard_constraints: existing?.hard_constraints?.length ? existing.hard_constraints : snapshot.work.hardConstraints,
+      execution_controls: {
+        planning_first: {
+          required_prewrite_sequence:
+            existing?.execution_controls?.planning_first?.required_prewrite_sequence?.length
+              ? existing.execution_controls.planning_first.required_prewrite_sequence
+              : ["full-volume-plan", "stage-map", "chapter-function-mix", "transition-and-daily-slots", "current-batch-outline"],
+        },
+        verification_before_completion: {
+          require_evidence_before_mark_done:
+            existing?.execution_controls?.verification_before_completion?.require_evidence_before_mark_done ?? true,
+          required_after_current_batch:
+            existing?.execution_controls?.verification_before_completion?.required_after_current_batch?.length
+              ? existing.execution_controls.verification_before_completion.required_after_current_batch
+              : ["writing:meta-check", "writing:budget-check"],
+        },
+        root_cause_first: {
+          require_issue_classification_before_rewrite:
+            existing?.execution_controls?.root_cause_first?.require_issue_classification_before_rewrite ?? true,
+          allowed_rewrite_triggers:
+            existing?.execution_controls?.root_cause_first?.allowed_rewrite_triggers?.length
+              ? existing.execution_controls.root_cause_first.allowed_rewrite_triggers
+              : ["planning-gap", "continuity-gap", "anchor-gap", "knowledge-layer-gap", "exposition-gap", "pacing-gap", "volume-budget-gap", "execution-bug"],
+        },
+      },
       knowledge_state: {
         inherit_workspace_workflow: existing?.knowledge_state?.inherit_workspace_workflow ?? true,
         active_global_profile: existing?.knowledge_state?.active_global_profile ?? "default-global",
@@ -868,15 +974,15 @@ export class WorkspaceProtocolService {
         enabled_rule_sets:
           existing?.knowledge_state?.enabled_rule_sets?.length
             ? existing.knowledge_state.enabled_rule_sets
-            : ["continuity", "exposition", "pacing"],
+            : ["continuity", "opening-arc", "anchoring", "exposition", "pacing"],
       },
       last_outputs: {
         latest_chapter_file: existing?.last_outputs?.latest_chapter_file ?? latestDocumentPath,
         latest_summary_file: existing?.last_outputs?.latest_summary_file ?? "03-中间产物/latest-summary.md",
         latest_review_file: existing?.last_outputs?.latest_review_file ?? "03-中间产物/latest-review.md",
-        latest_review_data_file: existing?.last_outputs?.latest_review_data_file ?? "03-涓棿浜х墿/latest-review.json",
+        latest_review_data_file: existing?.last_outputs?.latest_review_data_file ?? "03-中间产物/latest-review.json",
         latest_knowledge_candidates_file:
-          existing?.last_outputs?.latest_knowledge_candidates_file ?? "03-涓棿浜х墿/latest-knowledge-candidates.json",
+          existing?.last_outputs?.latest_knowledge_candidates_file ?? "03-中间产物/latest-knowledge-candidates.json",
         latest_sync_source: existing?.last_outputs?.latest_sync_source ?? latestDocumentPath,
       },
       sync: {
@@ -899,9 +1005,13 @@ export class WorkspaceProtocolService {
     snapshot: WorkbenchProjectSnapshot,
     book: BookProtocol,
     knowledgeItems: KnowledgeItemRecord[],
+    gateStatuses: WritingPackGateStatusRecord[],
   ): string {
     const recentChapters = [...snapshot.chapters].slice(-3).reverse();
     const recentCharacters = snapshot.characters.slice(0, 5);
+    const relevantGenericEntities = snapshot.genericEntities.slice(0, 8);
+    const relevantTagTaxonomies = snapshot.tagTaxonomies.slice(0, 5);
+    const relevantTaskTemplates = snapshot.taskTemplates.slice(0, 5);
     const sourceOfTruth = book.source_of_truth ?? {};
     const hardConstraints = book.hard_constraints ?? [];
     const knowledgeWorkflow = summary.knowledgeWorkflow;
@@ -912,6 +1022,10 @@ export class WorkspaceProtocolService {
     const currentBatchReviewStatus = this.readString(knowledgeState?.current_batch_review_status);
     const nextRequiredReviewAtChapter = this.readNumber(knowledgeState?.next_required_review_at_chapter);
     const activeKnowledgeItems = knowledgeItems.slice(0, knowledgeWorkflow?.active_budget?.batch_focus_findings ?? 5);
+    const writingGateAssessment = this.assessWritingPackGateState(summary, book, gateStatuses);
+    const gateLines = gateStatuses.length
+      ? gateStatuses.map((gate) => `- ${gate.gateCode}：${gate.gateStatus}${gate.note ? `（${gate.note}）` : ""}`)
+      : ["- 当前没有可用的 gate 状态。"];
 
     const lines = [
       `# 写作包：${snapshot.work.title}`,
@@ -920,6 +1034,8 @@ export class WorkspaceProtocolService {
       `- 当前阶段：${book.stage ?? snapshot.work.status}`,
       `- 当前焦点：${book.current_focus?.task_label ?? "待补当前任务"}`,
       `- 目标：${book.current_focus?.goal ?? snapshot.work.tagline}`,
+      `- 当前用途：${writingGateAssessment.mode}`,
+      `- 当前是否允许继续正文：${writingGateAssessment.canDraft ? "是" : "否"}`,
       "",
       "## 关键锚点",
       `- 协议文件：${this.toDisplayPath(summary.bookFilePath)}`,
@@ -944,6 +1060,14 @@ export class WorkspaceProtocolService {
       ...(enabledRuleSets.length ? [`- 启用规则集：${enabledRuleSets.join(" / ")}`] : ["- 当前没有启用规则集。"]),
       ...(enabledGates.length ? [`- 启用 gate：${enabledGates.join(" / ")}`] : ["- 当前没有启用 gate。"]),
       "",
+      "## gate 状态",
+      ...gateLines,
+      "",
+      "## 当前阻断原因",
+      ...(writingGateAssessment.blockers.length
+        ? writingGateAssessment.blockers.map((item) => `- ${item}`)
+        : ["- 当前没有阻断项，可以继续按当前批次章纲推进正文。"]),
+      "",
       "## 最近章节摘要",
       ...(recentChapters.length
         ? recentChapters.map((chapter) => `- 第 ${chapter.order} 章《${chapter.title}》：${chapter.summary}`)
@@ -954,12 +1078,43 @@ export class WorkspaceProtocolService {
         ? recentCharacters.map((character) => `- ${character.name}：${character.role} / ${character.coreDesire}`)
         : ["- 当前还没有稳定的角色资产。"]),
       "",
+      "## 当前相关通用实体",
+      ...(relevantGenericEntities.length
+        ? relevantGenericEntities.map(
+            (entity) =>
+              `- ${entity.displayName}（${entity.entityType}）：关系 ${entity.edgeCount} / 面板值 ${entity.panelValueCount} / 标签 ${entity.tagCount}${entity.summary ? ` / ${entity.summary}` : ""}`,
+          )
+        : ["- 当前还没有通用实体投影。"]),
+      "",
+      "## 标签投影",
+      ...(relevantTagTaxonomies.length
+        ? relevantTagTaxonomies.map((taxonomy) => {
+            const topTags = taxonomy.topTags.length
+              ? taxonomy.topTags.map((tag) => `${tag.tagLabel}×${tag.count}`).join("、")
+              : "暂无高频标签";
+            return `- ${taxonomy.label}：覆盖 ${taxonomy.taggedEntityCount} 个实体 / ${taxonomy.totalTagCount} 条标签 / 高频标签：${topTags}`;
+          })
+        : ["- 当前还没有标签投影。"]),
+      "",
+      "## 任务与匹配投影",
+      ...(relevantTaskTemplates.length
+        ? relevantTaskTemplates.map((task) => {
+            const topMatch =
+              task.topMatchEntityId && task.topMatchScore !== undefined
+                ? ` / 最高匹配：${task.topMatchEntityId}（${task.topMatchScore}）`
+                : "";
+            return `- ${task.label}（${task.taskType}）：要求 ${task.requirementCount} / 指派 ${task.assignmentCount} / 匹配 ${task.matchCount}${topMatch}`;
+          })
+        : ["- 当前还没有任务模板投影。"]),
+      "",
       "## 系统建议的下一步",
-      `- 优先完成：${book.current_focus?.summary ?? "继续按照当前焦点任务推进。"}`,
+      ...(writingGateAssessment.canDraft
+        ? [`- 优先完成：${book.current_focus?.summary ?? "继续按照当前焦点任务推进。"} `]
+        : writingGateAssessment.nextActions.map((item) => `- ${item}`)),
     ];
 
     lines.splice(
-      24,
+      26,
       0,
       `- 候选经验文件：${book.last_outputs?.latest_knowledge_candidates_file ?? "尚未生成"}`,
       "",
@@ -974,6 +1129,121 @@ export class WorkspaceProtocolService {
     );
 
     return lines.join("\n");
+  }
+
+  private async loadWritingPackGateStatuses(
+    summary: WorkProtocolSummary,
+    projectId: string,
+    book: BookProtocol,
+  ): Promise<WritingPackGateStatusRecord[]> {
+    const batchId = this.readString(book.knowledge_state?.current_batch_id);
+    const enabledGates = this.readStringArray(summary.knowledgeWorkflow?.enabled_gates);
+    if (!enabledGates.length) {
+      return [];
+    }
+
+    if (!batchId) {
+      return enabledGates.map((gateCode) => ({
+        gateCode,
+        gateStatus: this.inferGateStatusWithoutStoredRecord(gateCode, summary, book),
+        note: this.inferGateNoteWithoutStoredRecord(gateCode, summary, book),
+      }));
+    }
+
+    try {
+      const storedGates = await this.knowledgeMethodRepository.listBatchKnowledgeGates(batchId);
+      const storedByCode = new Map(
+        storedGates.map((gate) => [this.normalizeGateCode(gate.gateCode), gate]),
+      );
+
+      return enabledGates.map((gateCode) => {
+        const normalizedGateCode = this.normalizeGateCode(gateCode);
+        const stored = storedByCode.get(normalizedGateCode);
+        if (stored) {
+          return {
+            gateCode,
+            gateStatus: stored.gateStatus,
+            note: stored.note,
+          };
+        }
+
+        return {
+          gateCode,
+          gateStatus: this.inferGateStatusWithoutStoredRecord(gateCode, summary, book),
+          note: this.inferGateNoteWithoutStoredRecord(gateCode, summary, book),
+        };
+      });
+    } catch {
+      return enabledGates.map((gateCode) => ({
+        gateCode,
+        gateStatus: this.inferGateStatusWithoutStoredRecord(gateCode, summary, book),
+        note: this.inferGateNoteWithoutStoredRecord(gateCode, summary, book),
+      }));
+    }
+  }
+
+  private assessWritingPackGateState(
+    summary: WorkProtocolSummary,
+    book: BookProtocol,
+    gateStatuses: WritingPackGateStatusRecord[],
+  ): {
+    mode: "drafting" | "review" | "planning";
+    canDraft: boolean;
+    blockers: string[];
+    nextActions: string[];
+  } {
+    const taskType = this.readString(book.current_focus?.task_type);
+    const reviewStatus = this.readString(book.knowledge_state?.current_batch_review_status);
+    const planningPolicy = summary.workspace?.execution_policy?.planning_first;
+    const verificationPolicy = summary.workspace?.execution_policy?.verification_before_completion;
+
+    const blockers: string[] = [];
+    const nextActions: string[] = [];
+    let mode: "drafting" | "review" | "planning" = "drafting";
+
+    if (
+      planningPolicy?.require_full_volume_plan_before_drafting &&
+      ["planning", "replanning"].includes(taskType ?? "")
+    ) {
+      mode = "planning";
+      blockers.push("当前焦点仍处于规划态，必须先完成整卷骨架、阶段地图和当前批次章纲。");
+      nextActions.push("先补整卷功能、阶段事件和当前批次章纲，再继续正文。");
+    }
+
+    if (
+      verificationPolicy?.require_evidence_before_mark_done &&
+      this.readBoolean(book.knowledge_state?.current_batch_review_required) &&
+      reviewStatus !== "resolved"
+    ) {
+      mode = "review";
+      blockers.push("当前 batch 仍要求先完成复盘，复盘状态未 resolved。");
+      nextActions.push("先完成当前批次复盘，再继续下一批正文。");
+    }
+
+    for (const gate of gateStatuses) {
+      if (["pending", "blocked"].includes(gate.gateStatus)) {
+        if (!blockers.includes(`${gate.gateCode} 未通过`)) {
+          blockers.push(`${gate.gateCode} 未通过`);
+        }
+      }
+    }
+
+    if (!nextActions.length) {
+      if (mode === "planning") {
+        nextActions.push("先完成规划门禁，再重新生成写作包。");
+      } else if (mode === "review") {
+        nextActions.push("先处理当前批次复盘和 gate，再重新生成写作包。");
+      } else {
+        nextActions.push("继续按当前批次章纲推进正文。");
+      }
+    }
+
+    return {
+      mode,
+      canDraft: blockers.length === 0,
+      blockers,
+      nextActions,
+    };
   }
 
   private async loadKnowledgeItemsForWritingPack(
@@ -1169,7 +1439,8 @@ export class WorkspaceProtocolService {
       0,
       knowledgeWorkflow?.active_budget?.batch_focus_findings ?? 5,
     );
-    const candidatePrompts = this.buildBatchCandidatePrompts(enabledRuleSets, knowledgeState);
+    const syntheticFindings = this.buildSyntheticBatchReviewFindings(summary, book, enabledRuleSets, recentChapters);
+    const candidatePrompts = this.buildBatchCandidatePrompts(summary, enabledRuleSets, knowledgeState);
 
     return {
       artifactKind: "batch-review",
@@ -1192,16 +1463,19 @@ export class WorkspaceProtocolService {
         title: chapter.title,
         summary: chapter.summary,
       })),
-      findings: reviewBundles.map((bundle) => ({
-        id: bundle.id,
-        title: bundle.title,
-        summary: bundle.summary,
-        blockingLevel: bundle.blockingLevel,
-        riskNature: bundle.riskNature,
-        sourcePath: bundle.sourcePath,
-        sourceDocumentId: bundle.sourceDocumentId,
-        riskReasons: bundle.riskReasons,
-      })),
+      findings: [
+        ...reviewBundles.map((bundle) => ({
+          id: bundle.id,
+          title: bundle.title,
+          summary: bundle.summary,
+          blockingLevel: bundle.blockingLevel,
+          riskNature: bundle.riskNature,
+          sourcePath: bundle.sourcePath,
+          sourceDocumentId: bundle.sourceDocumentId,
+          riskReasons: bundle.riskReasons,
+        })),
+        ...syntheticFindings,
+      ],
       candidatePrompts,
       nextActions: [
         "先确认本批次最重要的 1-3 个问题是否成立。",
@@ -1209,6 +1483,56 @@ export class WorkspaceProtocolService {
         "完成批次复盘后，再生成下一批写作包。",
       ],
     };
+  }
+
+  private buildSyntheticBatchReviewFindings(
+    summary: WorkProtocolSummary,
+    book: BookProtocol,
+    enabledRuleSets: string[],
+    recentChapters: BatchReviewChapterRecord[],
+  ): BatchReviewFindingRecord[] {
+    if (!enabledRuleSets.includes("anchoring")) {
+      return [];
+    }
+
+    const openingArcIncomplete = this.readString(book.knowledge_state?.opening_arc_status) !== "completed";
+    const focusTask = this.readString(book.current_focus?.task_type) ?? "";
+    const isPlanningOrOpening = openingArcIncomplete || focusTask.includes("opening") || focusTask.includes("replan");
+
+    if (!isPlanningOrOpening) {
+      return [];
+    }
+
+    const recentSourcePath = this.readString(book.last_outputs?.latest_chapter_file);
+    const chapterLabels = recentChapters.slice(0, 3).map((chapter) => `第 ${chapter.order} 章《${chapter.title}》`);
+
+    return [
+      {
+        id: "synthetic-anchor-gap",
+        title: "关键人物首次出场缺少身份锚点",
+        summary:
+          "当前开篇批次需要确认：关键人物第一次正式进入戏里时，是否给了读者身份、职能或压制力支点，而不是只让文中人物自己知道。",
+        blockingLevel: "review",
+        riskNature: "anchor-gap",
+        sourcePath: recentSourcePath,
+        riskReasons: chapterLabels.length
+          ? [`优先检查 ${chapterLabels.join("、")} 里的首次人物出场。`]
+          : ["优先检查开篇批次里的首次人物出场。"],
+      },
+      {
+        id: "synthetic-knowledge-layer-gap",
+        title: "世界词汇和旧事信号缺少最低限度解释",
+        summary:
+          "当前开篇批次需要确认：重要地点、组织、秩序词第一次进入情节时，是否给了基础关系解释；角色提到旧事、旧账、熟人关系时，是否给了读者最低限度支点。",
+        blockingLevel: "review",
+        riskNature: "knowledge-layer-gap",
+        sourcePath: recentSourcePath,
+        riskReasons: [
+          "悬疑可以后置真相，但不能后置基础理解。",
+          "如果旧事和舞台关系只丢信号不给支点，读者会把它读成莫名其妙。",
+        ],
+      },
+    ];
   }
   private async persistBatchKnowledge(
     summary: WorkProtocolSummary,
@@ -1366,7 +1690,7 @@ export class WorkspaceProtocolService {
       0,
       knowledgeWorkflow?.active_budget?.batch_focus_findings ?? 5,
     );
-    const candidatePrompts = this.buildBatchCandidatePrompts(enabledRuleSets, knowledgeState);
+    const candidatePrompts = this.buildBatchCandidatePrompts(summary, enabledRuleSets, knowledgeState);
 
     return [
       `# 当前批次复盘单：${snapshot.work.title}`,
@@ -1676,6 +2000,7 @@ export class WorkspaceProtocolService {
     };
   }
   private buildBatchCandidatePrompts(
+    summary: WorkProtocolSummary,
     enabledRuleSets: string[],
     knowledgeState: BookKnowledgeStateProtocol | undefined,
   ): string[] {
@@ -1683,6 +2008,11 @@ export class WorkspaceProtocolService {
 
     if (enabledRuleSets.includes("continuity")) {
       prompts.push("上一章章尾抛出的问题，下一章开头是否先接住了当场后果。");
+    }
+    if (enabledRuleSets.includes("anchoring")) {
+      prompts.push("重要人物第一次正式进入戏里时，是否补足了身份 / 职能 / 压制力锚点。");
+      prompts.push("重要地点、组织、秩序词第一次正式进入情节时，是否给了读者最低限度的关系解释。");
+      prompts.push("角色提到旧事、旧账、熟人关系时，是否给了读者可理解的最低限度支点，而不是只丢一句谜语。");
     }
     if (enabledRuleSets.includes("exposition")) {
       prompts.push("当前批次里，主角职业、当前处境、基础舞台关系是否仍然清楚。");
@@ -1693,6 +2023,11 @@ export class WorkspaceProtocolService {
     if (enabledRuleSets.includes("opening-arc-repair") || this.readString(knowledgeState?.opening_arc_status) !== "completed") {
       prompts.push("开篇弧线是否让读者在前三章内知道主角是谁、靠什么活、为什么不能出事。");
     }
+    if (summary.workspace?.execution_policy?.root_cause_first?.require_issue_classification_before_rewrite) {
+      prompts.push(
+        `当前批次最主要的问题先归类为：${this.readStringArray(summary.workspace?.execution_policy?.root_cause_first?.default_categories).join(" / ")}。`,
+      );
+    }
 
     return prompts;
   }
@@ -1701,6 +2036,8 @@ export class WorkspaceProtocolService {
       case "factual-conflict":
         return "continuity";
       case "information-gap":
+      case "anchor-gap":
+      case "knowledge-layer-gap":
         return "exposition";
       case "confidence-review":
         return "pacing";
@@ -1716,22 +2053,46 @@ export class WorkspaceProtocolService {
     artifactData: BatchReviewArtifactData,
     book: BookProtocol,
   ): string {
-    if (gateCode === "batch_review_required") {
-      return artifactData.reviewRequired ? "pending" : "waived";
+    const normalizedGateCode = this.normalizeGateCode(gateCode);
+
+    if (normalizedGateCode === "batch-review-required") {
+      if (!artifactData.reviewRequired) {
+        return "waived";
+      }
+      return artifactData.reviewStatus === "resolved" ? "passed" : "pending";
     }
 
-    if (gateCode === "opening_arc_review") {
+    if (normalizedGateCode === "opening-arc-review") {
       return this.readString(book.knowledge_state?.opening_arc_status) === "completed" ? "passed" : "pending";
     }
 
-    if (gateCode === "continuity_review") {
+    if (normalizedGateCode === "continuity-review") {
       return artifactData.findings.some((finding) => this.mapRiskNatureToKnowledgeDomain(finding.riskNature) === "continuity")
         ? "pending"
         : "passed";
     }
 
-    if (gateCode === "meta_check") {
+    if (normalizedGateCode === "anchoring-review") {
+      return artifactData.findings.some((finding) => this.mapRiskNatureToKnowledgeDomain(finding.riskNature) === "exposition") || this.readString(book.knowledge_state?.opening_arc_status) !== "completed"
+        ? "pending"
+        : "passed";
+    }
+
+    if (normalizedGateCode === "meta-language-check") {
       return "pending";
+    }
+
+    if (normalizedGateCode === "prewrite-plan-required") {
+      return ["planning", "replanning"].includes(this.readString(book.current_focus?.task_type) ?? "") ? "pending" : "passed";
+    }
+
+    if (normalizedGateCode === "rhythm-plan-required") {
+      return ["planning", "replanning"].includes(this.readString(book.current_focus?.task_type) ?? "") ? "pending" : "passed";
+    }
+
+    if (normalizedGateCode === "volume-budget-check") {
+      const focusTask = this.readString(book.current_focus?.task_type) ?? "";
+      return focusTask.includes("replan") || focusTask.includes("budget") ? "pending" : "passed";
     }
 
     return "pending";
@@ -1742,29 +2103,129 @@ export class WorkspaceProtocolService {
     artifactData: BatchReviewArtifactData,
     book: BookProtocol,
   ): string {
-    if (gateCode === "batch_review_required") {
+    const normalizedGateCode = this.normalizeGateCode(gateCode);
+
+    if (normalizedGateCode === "batch-review-required") {
       return artifactData.reviewRequired
         ? "Current batch review is required and has been generated, but not yet manually resolved."
         : "Current batch does not require a blocking review gate.";
     }
 
-    if (gateCode === "opening_arc_review") {
+    if (normalizedGateCode === "opening-arc-review") {
       return this.readString(book.knowledge_state?.opening_arc_status) === "completed"
         ? "Opening arc review is already completed for this book."
         : "Opening arc review is still in progress and should remain active.";
     }
 
-    if (gateCode === "continuity_review") {
+    if (normalizedGateCode === "continuity-review") {
       return artifactData.findings.some((finding) => this.mapRiskNatureToKnowledgeDomain(finding.riskNature) === "continuity")
         ? "Continuity findings are still present in the current batch review."
         : "No blocking continuity finding was detected in the current batch review.";
     }
 
-    if (gateCode === "meta_check") {
+    if (normalizedGateCode === "anchoring-review") {
+      return artifactData.findings.some((finding) => this.mapRiskNatureToKnowledgeDomain(finding.riskNature) === "exposition")
+        ? "Anchor or reader-understanding findings are still present in the current batch review."
+        : "No blocking anchor or reader-understanding finding was detected in the current batch review.";
+    }
+
+    if (normalizedGateCode === "meta-language-check") {
       return "Meta-language scan is still tracked outside the method ledger and should be confirmed separately.";
     }
 
+    if (normalizedGateCode === "prewrite-plan-required") {
+      return "Current focus is still planning-oriented, so正文 drafting should remain blocked until the plan gate passes.";
+    }
+
+    if (normalizedGateCode === "rhythm-plan-required") {
+      return "Rhythm and chapter-function mix should be settled before entering the next drafting batch.";
+    }
+
+    if (normalizedGateCode === "volume-budget-check") {
+      return "Volume budget gate should stay active until projected volume words and chapter count are consistent.";
+    }
+
     return "Gate status has been recorded but still needs an explicit resolution rule.";
+  }
+
+  private inferGateStatusWithoutStoredRecord(
+    gateCode: string,
+    summary: WorkProtocolSummary,
+    book: BookProtocol,
+  ): string {
+    const normalizedGateCode = this.normalizeGateCode(gateCode);
+    const reviewRequired = this.readBoolean(book.knowledge_state?.current_batch_review_required);
+    const reviewStatus = this.readString(book.knowledge_state?.current_batch_review_status);
+    const focusTask = this.readString(book.current_focus?.task_type) ?? "";
+
+    if (normalizedGateCode === "batch-review-required") {
+      if (!reviewRequired) {
+        return "waived";
+      }
+      return reviewStatus === "resolved" ? "passed" : "pending";
+    }
+
+    if (normalizedGateCode === "opening-arc-review") {
+      return this.readString(book.knowledge_state?.opening_arc_status) === "completed" ? "passed" : "pending";
+    }
+
+    if (normalizedGateCode === "anchoring-review") {
+      return this.readString(book.knowledge_state?.opening_arc_status) === "completed" && (!reviewRequired || reviewStatus === "resolved") ? "passed" : "pending";
+    }
+
+    if (normalizedGateCode === "prewrite-plan-required" || normalizedGateCode === "rhythm-plan-required") {
+      return ["planning", "replanning"].includes(focusTask) ? "pending" : "passed";
+    }
+
+    if (normalizedGateCode === "volume-budget-check") {
+      return focusTask.includes("replan") || focusTask.includes("budget") ? "pending" : "passed";
+    }
+
+    if (normalizedGateCode === "meta-language-check" || normalizedGateCode === "continuity-review") {
+      return reviewRequired && reviewStatus !== "resolved" ? "pending" : "passed";
+    }
+
+    return summary.enabledKnowledgeGates.includes(gateCode) ? "pending" : "waived";
+  }
+
+  private inferGateNoteWithoutStoredRecord(
+    gateCode: string,
+    summary: WorkProtocolSummary,
+    book: BookProtocol,
+  ): string {
+    const normalizedGateCode = this.normalizeGateCode(gateCode);
+    const focusTask = this.readString(book.current_focus?.task_type) ?? "";
+
+    if (normalizedGateCode === "batch-review-required") {
+      return "Current gate status is inferred from book.yml because no persisted gate record exists yet.";
+    }
+    if (normalizedGateCode === "prewrite-plan-required" || normalizedGateCode === "rhythm-plan-required") {
+      return ["planning", "replanning"].includes(focusTask)
+        ? "Current focus is still planning-oriented."
+        : "Current focus no longer indicates a planning block.";
+    }
+    if (normalizedGateCode === "volume-budget-check") {
+      return focusTask.includes("replan") || focusTask.includes("budget")
+        ? "Current focus indicates a budget replan is still required."
+        : "No budget replan flag is currently active in focus state.";
+    }
+    if (normalizedGateCode === "opening-arc-review") {
+      return this.readString(book.knowledge_state?.opening_arc_status) === "completed"
+        ? "Opening arc status is already completed."
+        : "Opening arc status is still incomplete.";
+    }
+    if (normalizedGateCode === "anchoring-review") {
+      return this.readString(book.knowledge_state?.opening_arc_status) === "completed"
+        ? "Opening arc protocol says the anchor review can pass, but persisted review evidence should still be checked."
+        : "Opening arc is still incomplete, so anchor review remains active.";
+    }
+    return summary.enabledKnowledgeGates.includes(gateCode)
+      ? "Current gate status is inferred from protocol state."
+      : "No gate record exists for this code.";
+  }
+
+  private normalizeGateCode(gateCode: string): string {
+    return gateCode.replace(/_/g, "-").trim().toLowerCase();
   }
 
   private mapBlockingLevelToSeverity(blockingLevel: string): string {
@@ -1793,7 +2254,7 @@ export class WorkspaceProtocolService {
     if (prompt.includes("上一章") || prompt.includes("次章") || prompt.includes("接住")) {
       return "continuity";
     }
-    if (prompt.includes("基础信息") || prompt.includes("职业") || prompt.includes("舞台") || prompt.includes("读者")) {
+    if (prompt.includes("首次") || prompt.includes("身份") || prompt.includes("职能") || prompt.includes("组织") || prompt.includes("旧事") || prompt.includes("支点") || prompt.includes("基础信息") || prompt.includes("职业") || prompt.includes("舞台") || prompt.includes("读者")) {
       return "exposition";
     }
     if (prompt.includes("问题 -> 追查 -> 小兑现") || prompt.includes("小兑现") || prompt.includes("只堆谜团")) {
@@ -1903,4 +2364,6 @@ export class WorkspaceProtocolService {
     return Math.max(Math.ceil((activeChapter + 1) / normalizedBatchSize) * normalizedBatchSize, normalizedBatchSize);
   }
 }
+
+
 

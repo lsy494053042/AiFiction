@@ -138,3 +138,31 @@ export interface PromptRegistryRepository {
     changeSummary?: string;
   }, context?: RepositoryWriteContext): Promise<string>;
 }
+
+/**
+ * 通用实体仓储。
+ * 负责实体、关系、面板、标签、任务与匹配的最小读写协议。
+ */
+export interface GenericEntityRepository {
+  saveEntity(
+    input: {
+      id: string;
+      projectId: string;
+      entityType: string;
+      canonicalName: string;
+      displayName: string;
+      summary?: string;
+    },
+    context?: RepositoryWriteContext,
+  ): Promise<void>;
+  listEntities(projectId: string, entityType?: string): Promise<unknown[]>;
+  getEntityById(entityId: string): Promise<unknown | null>;
+  listEntityEdges(entityId: string): Promise<unknown[]>;
+  listEntityPanelValues(entityId: string): Promise<unknown[]>;
+  listEntityTags(entityId: string): Promise<unknown[]>;
+  getTaskTemplate(taskTemplateId: string): Promise<unknown | null>;
+  listTaskTemplates(projectId: string): Promise<unknown[]>;
+  listTaskRequirements(taskTemplateId: string): Promise<unknown[]>;
+  listTaskAssignments(taskTemplateId: string): Promise<unknown[]>;
+  listTaskMatches(taskTemplateId: string): Promise<unknown[]>;
+}

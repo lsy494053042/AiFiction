@@ -1,4 +1,4 @@
-workspace_id: your-workspace-id
+﻿workspace_id: your-workspace-id
 workspace_name: Your Workspace
 root_dir: .
 books_dir: books
@@ -35,7 +35,35 @@ knowledge_workflow:
     - batch-review-required
     - meta-language-check
     - continuity-review
+    - anchoring-review
     - opening-arc-review
     - prewrite-plan-required
     - rhythm-plan-required
     - volume-budget-check
+
+execution_policy:
+  planning_first:
+    require_full_volume_plan_before_drafting: true
+    require_stage_map_before_batch_drafting: true
+    require_current_batch_outline_before_drafting: true
+  verification_before_completion:
+    require_evidence_before_mark_done: true
+    required_after_batch:
+      - writing:meta-check
+      - writing:budget-check
+    required_before_claiming_completion:
+      - encoding:check
+      - db:protocol-smoke
+  root_cause_first:
+    require_issue_classification_before_rewrite: true
+    default_categories:
+      - planning-gap
+      - continuity-gap
+      - anchor-gap
+      - knowledge-layer-gap
+      - exposition-gap
+      - pacing-gap
+      - volume-budget-gap
+      - execution-bug
+
+

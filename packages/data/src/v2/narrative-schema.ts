@@ -1,12 +1,8 @@
-﻿import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 import { lifecycleColumns, orderingColumns } from "../foundation/base-columns";
 import { novelProjectsV2Table } from "./project-schema";
 
-/**
- * 世界规则表。
- * V2 继续保留规则表，但预留 category、severity、effectiveScope 等后续扩展方向。
- */
 export const worldRulesV2Table = sqliteTable(
   "world_rules_v2",
   {
@@ -26,95 +22,352 @@ export const worldRulesV2Table = sqliteTable(
   }),
 );
 
-/**
- * 角色主表。
- * 这里只放角色核心身份和角色弧，别名与关系拆成子表。
- */
-export const charactersV2Table = sqliteTable(
-  "characters_v2",
+export const entitiesV2Table = sqliteTable(
+  "entities_v2",
   {
     id: text("id").primaryKey(),
     projectId: text("project_id")
       .notNull()
       .references(() => novelProjectsV2Table.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
-    roleType: text("role_type").notNull(),
-    archetype: text("archetype").notNull(),
-    publicIdentity: text("public_identity").notNull(),
-    hiddenIdentity: text("hidden_identity"),
-    coreDesire: text("core_desire").notNull(),
-    coreFear: text("core_fear").notNull(),
-    growthArc: text("growth_arc").notNull(),
-    speechGuide: text("speech_guide", { mode: "json" }).$type<string[]>().notNull(),
+    entityType: text("entity_type").notNull(),
+    canonicalName: text("canonical_name").notNull(),
+    displayName: text("display_name").notNull(),
+    summary: text("summary"),
     ...lifecycleColumns(),
   },
   (table) => ({
-    projectIndex: index("characters_v2_project_id_idx").on(table.projectId),
+    projectIndex: index("entities_v2_project_id_idx").on(table.projectId),
+    typeIndex: index("entities_v2_project_type_idx").on(table.projectId, table.entityType),
+    canonicalIndex: uniqueIndex("entities_v2_project_type_name_unique").on(
+      table.projectId,
+      table.entityType,
+      table.canonicalName,
+    ),
   }),
 );
 
-/**
- * 角色别名表。
- * 以后支持多称谓、别号、马甲名时无需改角色主表。
- */
-export const characterAliasesV2Table = sqliteTable(
-  "character_aliases_v2",
+export const entityAliasesV2Table = sqliteTable(
+  "entity_aliases_v2",
   {
     id: text("id").primaryKey(),
-    characterId: text("character_id")
+    entityId: text("entity_id")
       .notNull()
-      .references(() => charactersV2Table.id, { onDelete: "cascade" }),
+      .references(() => entitiesV2Table.id, { onDelete: "cascade" }),
     alias: text("alias").notNull(),
     aliasType: text("alias_type").notNull(),
     ...orderingColumns(),
     ...lifecycleColumns(),
   },
   (table) => ({
-    characterIndex: index("character_aliases_v2_character_id_idx").on(table.characterId),
-    orderIndex: uniqueIndex("character_aliases_v2_character_sort_unique").on(
-      table.characterId,
-      table.sortOrder,
-    ),
+    entityIndex: index("entity_aliases_v2_entity_id_idx").on(table.entityId),
+    orderIndex: uniqueIndex("entity_aliases_v2_entity_sort_unique").on(table.entityId, table.sortOrder),
   }),
 );
 
-/**
- * 角色关系表。
- * V2 明确拆表，避免长期把关系网络塞在 JSON 中无法查询。
- */
-export const characterRelationshipsV2Table = sqliteTable(
-  "character_relationships_v2",
+export const entityEdgesV2Table = sqliteTable(
+  "entity_edges_v2",
   {
     id: text("id").primaryKey(),
     projectId: text("project_id")
       .notNull()
       .references(() => novelProjectsV2Table.id, { onDelete: "cascade" }),
-    sourceCharacterId: text("source_character_id")
+    sourceEntityId: text("source_entity_id")
       .notNull()
-      .references(() => charactersV2Table.id, { onDelete: "cascade" }),
-    targetCharacterId: text("target_character_id")
+      .references(() => entitiesV2Table.id, { onDelete: "cascade" }),
+    targetEntityId: text("target_entity_id")
       .notNull()
-      .references(() => charactersV2Table.id, { onDelete: "cascade" }),
+      .references(() => entitiesV2Table.id, { onDelete: "cascade" }),
+    edgeType: text("edge_type").notNull(),
     publicLabel: text("public_label").notNull(),
     privateLabel: text("private_label"),
-    trustLevel: integer("trust_level").notNull(),
-    tensionLevel: integer("tension_level").notNull(),
+    directionality: text("directionality").notNull(),
+    weight: integer("weight").notNull(),
     ...lifecycleColumns(),
   },
   (table) => ({
-    sourceIndex: index("character_relationships_v2_source_idx").on(table.sourceCharacterId),
-    targetIndex: index("character_relationships_v2_target_idx").on(table.targetCharacterId),
-    pairIndex: uniqueIndex("character_relationships_v2_pair_unique").on(
-      table.sourceCharacterId,
-      table.targetCharacterId,
+    projectIndex: index("entity_edges_v2_project_id_idx").on(table.projectId),
+    sourceIndex: index("entity_edges_v2_source_idx").on(table.sourceEntityId),
+    targetIndex: index("entity_edges_v2_target_idx").on(table.targetEntityId),
+    pairIndex: uniqueIndex("entity_edges_v2_pair_unique").on(
+      table.sourceEntityId,
+      table.targetEntityId,
+      table.edgeType,
       table.publicLabel,
     ),
   }),
 );
 
-/**
- * 分卷表。
- */
+export const panelTemplatesV2Table = sqliteTable(
+  "panel_templates_v2",
+  {
+    id: text("id").primaryKey(),
+    ownerKey: text("owner_key").notNull(),
+    projectId: text("project_id").references(() => novelProjectsV2Table.id, { onDelete: "cascade" }),
+    scope: text("scope").notNull(),
+    templateKey: text("template_key").notNull(),
+    label: text("label").notNull(),
+    appliesToEntityType: text("applies_to_entity_type").notNull(),
+    description: text("description"),
+    ...lifecycleColumns(),
+  },
+  (table) => ({
+    ownerIndex: index("panel_templates_v2_owner_idx").on(table.ownerKey),
+    projectIndex: index("panel_templates_v2_project_id_idx").on(table.projectId),
+    templateIndex: uniqueIndex("panel_templates_v2_owner_template_key_unique").on(
+      table.ownerKey,
+      table.templateKey,
+    ),
+  }),
+);
+
+export const panelFieldsV2Table = sqliteTable(
+  "panel_fields_v2",
+  {
+    id: text("id").primaryKey(),
+    templateId: text("template_id")
+      .notNull()
+      .references(() => panelTemplatesV2Table.id, { onDelete: "cascade" }),
+    fieldKey: text("field_key").notNull(),
+    label: text("label").notNull(),
+    valueType: text("value_type").notNull(),
+    cardinality: text("cardinality").notNull(),
+    displayGroup: text("display_group"),
+    isSearchable: integer("is_searchable", { mode: "boolean" }).notNull(),
+    isFilterable: integer("is_filterable", { mode: "boolean" }).notNull(),
+    isTimelineTracked: integer("is_timeline_tracked", { mode: "boolean" }).notNull(),
+    defaultValueJson: text("default_value_json", { mode: "json" }),
+    ...orderingColumns(),
+    ...lifecycleColumns(),
+  },
+  (table) => ({
+    templateIndex: index("panel_fields_v2_template_id_idx").on(table.templateId),
+    fieldIndex: uniqueIndex("panel_fields_v2_template_field_key_unique").on(
+      table.templateId,
+      table.fieldKey,
+    ),
+    orderIndex: uniqueIndex("panel_fields_v2_template_sort_unique").on(table.templateId, table.sortOrder),
+  }),
+);
+
+export const entityPanelValuesV2Table = sqliteTable(
+  "entity_panel_values_v2",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => novelProjectsV2Table.id, { onDelete: "cascade" }),
+    entityId: text("entity_id")
+      .notNull()
+      .references(() => entitiesV2Table.id, { onDelete: "cascade" }),
+    templateId: text("template_id")
+      .notNull()
+      .references(() => panelTemplatesV2Table.id, { onDelete: "cascade" }),
+    fieldId: text("field_id")
+      .notNull()
+      .references(() => panelFieldsV2Table.id, { onDelete: "cascade" }),
+    valueText: text("value_text"),
+    valueInteger: integer("value_integer"),
+    valueNumber: real("value_number"),
+    valueBoolean: integer("value_boolean", { mode: "boolean" }),
+    valueJson: text("value_json", { mode: "json" }),
+    ...lifecycleColumns(),
+  },
+  (table) => ({
+    projectIndex: index("entity_panel_values_v2_project_id_idx").on(table.projectId),
+    entityIndex: index("entity_panel_values_v2_entity_id_idx").on(table.entityId),
+    templateIndex: index("entity_panel_values_v2_template_id_idx").on(table.templateId),
+    fieldIndex: index("entity_panel_values_v2_field_id_idx").on(table.fieldId),
+    uniqueValueIndex: uniqueIndex("entity_panel_values_v2_entity_field_unique").on(
+      table.entityId,
+      table.fieldId,
+    ),
+  }),
+);
+
+export const entityStateEventsV2Table = sqliteTable(
+  "entity_state_events_v2",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => novelProjectsV2Table.id, { onDelete: "cascade" }),
+    entityId: text("entity_id")
+      .notNull()
+      .references(() => entitiesV2Table.id, { onDelete: "cascade" }),
+    fieldId: text("field_id").references(() => panelFieldsV2Table.id, { onDelete: "set null" }),
+    chapterId: text("chapter_id"),
+    eventType: text("event_type").notNull(),
+    reason: text("reason"),
+    oldValueJson: text("old_value_json", { mode: "json" }),
+    newValueJson: text("new_value_json", { mode: "json" }),
+    sourceArtifactId: text("source_artifact_id"),
+    ...lifecycleColumns(),
+  },
+  (table) => ({
+    projectIndex: index("entity_state_events_v2_project_id_idx").on(table.projectId),
+    entityIndex: index("entity_state_events_v2_entity_id_idx").on(table.entityId),
+    fieldIndex: index("entity_state_events_v2_field_id_idx").on(table.fieldId),
+    chapterIndex: index("entity_state_events_v2_chapter_id_idx").on(table.chapterId),
+  }),
+);
+
+export const tagTaxonomiesV2Table = sqliteTable(
+  "tag_taxonomies_v2",
+  {
+    id: text("id").primaryKey(),
+    ownerKey: text("owner_key").notNull(),
+    projectId: text("project_id").references(() => novelProjectsV2Table.id, { onDelete: "cascade" }),
+    scope: text("scope").notNull(),
+    taxonomyKey: text("taxonomy_key").notNull(),
+    label: text("label").notNull(),
+    description: text("description"),
+    ...lifecycleColumns(),
+  },
+  (table) => ({
+    ownerIndex: index("tag_taxonomies_v2_owner_idx").on(table.ownerKey),
+    projectIndex: index("tag_taxonomies_v2_project_id_idx").on(table.projectId),
+    taxonomyIndex: uniqueIndex("tag_taxonomies_v2_owner_taxonomy_key_unique").on(
+      table.ownerKey,
+      table.taxonomyKey,
+    ),
+  }),
+);
+
+export const entityTagsV2Table = sqliteTable(
+  "entity_tags_v2",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => novelProjectsV2Table.id, { onDelete: "cascade" }),
+    entityId: text("entity_id")
+      .notNull()
+      .references(() => entitiesV2Table.id, { onDelete: "cascade" }),
+    taxonomyId: text("taxonomy_id")
+      .notNull()
+      .references(() => tagTaxonomiesV2Table.id, { onDelete: "cascade" }),
+    tagCode: text("tag_code").notNull(),
+    tagLabel: text("tag_label").notNull(),
+    weight: integer("weight").notNull(),
+    ...lifecycleColumns(),
+  },
+  (table) => ({
+    projectIndex: index("entity_tags_v2_project_id_idx").on(table.projectId),
+    entityIndex: index("entity_tags_v2_entity_id_idx").on(table.entityId),
+    taxonomyIndex: index("entity_tags_v2_taxonomy_id_idx").on(table.taxonomyId),
+    uniqueTagIndex: uniqueIndex("entity_tags_v2_entity_taxonomy_code_unique").on(
+      table.entityId,
+      table.taxonomyId,
+      table.tagCode,
+    ),
+  }),
+);
+
+export const taskTemplatesV2Table = sqliteTable(
+  "task_templates_v2",
+  {
+    id: text("id").primaryKey(),
+    ownerKey: text("owner_key").notNull(),
+    projectId: text("project_id").references(() => novelProjectsV2Table.id, { onDelete: "cascade" }),
+    scope: text("scope").notNull(),
+    templateKey: text("template_key").notNull(),
+    label: text("label").notNull(),
+    taskType: text("task_type").notNull(),
+    description: text("description"),
+    ...lifecycleColumns(),
+  },
+  (table) => ({
+    ownerIndex: index("task_templates_v2_owner_idx").on(table.ownerKey),
+    projectIndex: index("task_templates_v2_project_id_idx").on(table.projectId),
+    templateIndex: uniqueIndex("task_templates_v2_owner_template_key_unique").on(
+      table.ownerKey,
+      table.templateKey,
+    ),
+  }),
+);
+
+export const taskRequirementsV2Table = sqliteTable(
+  "task_requirements_v2",
+  {
+    id: text("id").primaryKey(),
+    taskTemplateId: text("task_template_id")
+      .notNull()
+      .references(() => taskTemplatesV2Table.id, { onDelete: "cascade" }),
+    requirementKey: text("requirement_key").notNull(),
+    requirementType: text("requirement_type").notNull(),
+    targetKey: text("target_key").notNull(),
+    expectedText: text("expected_text"),
+    expectedNumber: real("expected_number"),
+    weight: integer("weight").notNull(),
+    ...orderingColumns(),
+    ...lifecycleColumns(),
+  },
+  (table) => ({
+    templateIndex: index("task_requirements_v2_template_id_idx").on(table.taskTemplateId),
+    requirementIndex: uniqueIndex("task_requirements_v2_template_requirement_key_unique").on(
+      table.taskTemplateId,
+      table.requirementKey,
+    ),
+    orderIndex: uniqueIndex("task_requirements_v2_template_sort_unique").on(
+      table.taskTemplateId,
+      table.sortOrder,
+    ),
+  }),
+);
+
+export const taskAssignmentsV2Table = sqliteTable(
+  "task_assignments_v2",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => novelProjectsV2Table.id, { onDelete: "cascade" }),
+    taskTemplateId: text("task_template_id")
+      .notNull()
+      .references(() => taskTemplatesV2Table.id, { onDelete: "cascade" }),
+    entityId: text("entity_id")
+      .notNull()
+      .references(() => entitiesV2Table.id, { onDelete: "cascade" }),
+    assignmentStatus: text("assignment_status").notNull(),
+    rationale: text("rationale"),
+    ...lifecycleColumns(),
+  },
+  (table) => ({
+    projectIndex: index("task_assignments_v2_project_id_idx").on(table.projectId),
+    templateIndex: index("task_assignments_v2_template_id_idx").on(table.taskTemplateId),
+    entityIndex: index("task_assignments_v2_entity_id_idx").on(table.entityId),
+  }),
+);
+
+export const entityTaskMatchesV2Table = sqliteTable(
+  "entity_task_matches_v2",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => novelProjectsV2Table.id, { onDelete: "cascade" }),
+    taskTemplateId: text("task_template_id")
+      .notNull()
+      .references(() => taskTemplatesV2Table.id, { onDelete: "cascade" }),
+    entityId: text("entity_id")
+      .notNull()
+      .references(() => entitiesV2Table.id, { onDelete: "cascade" }),
+    matchScore: real("match_score").notNull(),
+    matchLabel: text("match_label"),
+    reasonsJson: text("reasons_json", { mode: "json" }).notNull(),
+    ...lifecycleColumns(),
+  },
+  (table) => ({
+    projectIndex: index("entity_task_matches_v2_project_id_idx").on(table.projectId),
+    templateIndex: index("entity_task_matches_v2_template_id_idx").on(table.taskTemplateId),
+    entityIndex: index("entity_task_matches_v2_entity_id_idx").on(table.entityId),
+    uniqueMatchIndex: uniqueIndex("entity_task_matches_v2_task_entity_unique").on(
+      table.taskTemplateId,
+      table.entityId,
+    ),
+  }),
+);
+
 export const volumesV2Table = sqliteTable(
   "volumes_v2",
   {
@@ -135,10 +388,6 @@ export const volumesV2Table = sqliteTable(
   }),
 );
 
-/**
- * 章节表。
- * 章级的高频字段明确列出，正文等长文本内容交给 artifact 层。
- */
 export const chaptersV2Table = sqliteTable(
   "chapters_v2",
   {
@@ -170,10 +419,6 @@ export const chaptersV2Table = sqliteTable(
   }),
 );
 
-/**
- * 场景子表。
- * 这是章节未来最容易扩展的地方之一，所以提前拆出来。
- */
 export const chapterScenesV2Table = sqliteTable(
   "chapter_scenes_v2",
   {
@@ -197,9 +442,6 @@ export const chapterScenesV2Table = sqliteTable(
   }),
 );
 
-/**
- * 伏笔主表。
- */
 export const foreshadowsV2Table = sqliteTable(
   "foreshadows_v2",
   {
@@ -227,10 +469,6 @@ export const foreshadowsV2Table = sqliteTable(
   }),
 );
 
-/**
- * 伏笔关联表。
- * 用于把一个伏笔与多个章节、角色、规则或 artifact 建立显式关系。
- */
 export const foreshadowLinksV2Table = sqliteTable(
   "foreshadow_links_v2",
   {
@@ -248,9 +486,6 @@ export const foreshadowLinksV2Table = sqliteTable(
   }),
 );
 
-/**
- * 时间线事件表。
- */
 export const timelineEventsV2Table = sqliteTable(
   "timeline_events_v2",
   {
@@ -271,10 +506,6 @@ export const timelineEventsV2Table = sqliteTable(
   }),
 );
 
-/**
- * 实体状态快照表。
- * 这层比 V1 更泛化，后续不仅能存角色状态，也能扩展到组织、地点、势力等实体。
- */
 export const entityStateSnapshotsV2Table = sqliteTable(
   "entity_state_snapshots_v2",
   {

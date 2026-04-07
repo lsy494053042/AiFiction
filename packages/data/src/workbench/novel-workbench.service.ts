@@ -30,6 +30,7 @@ import {
 import { assessReviewRisk } from "../sync/review-risk";
 import { ensureSqliteV2Bootstrap } from "../v2/bootstrap";
 import { foreshadowsV2Table, novelProjectsV2Table, volumesV2Table } from "../v2";
+import { GenericEntityWorkbenchService } from "./generic-entity.service";
 import {
   buildReviewBundleImpactSummary,
   type WorkbenchImpactSummary,
@@ -41,10 +42,17 @@ export interface WorkbenchProjectStats {
   volumeCount: number;
   chapterCount: number;
   characterCount: number;
+  genericEntityCount: number;
+  nonCharacterEntityCount: number;
   foreshadowCount: number;
   relationCount: number;
   sourceCount: number;
   pendingReviewCount: number;
+  panelValueCount: number;
+  entityTagCount: number;
+  taskTemplateCount: number;
+  taskAssignmentCount: number;
+  taskMatchCount: number;
 }
 
 export interface WorkbenchProjectSummary {
@@ -52,6 +60,43 @@ export interface WorkbenchProjectSummary {
   stats: WorkbenchProjectStats;
   latestChapterTitle?: string;
   updatedAt: string;
+}
+
+export interface WorkbenchGenericEntitySummary {
+  entityId: string;
+  entityType: string;
+  canonicalName: string;
+  displayName: string;
+  summary?: string;
+  edgeCount: number;
+  panelValueCount: number;
+  tagCount: number;
+}
+
+export interface WorkbenchTaskTemplateSummary {
+  taskTemplateId: string;
+  templateKey: string;
+  label: string;
+  taskType: string;
+  requirementCount: number;
+  assignmentCount: number;
+  matchCount: number;
+  topMatchEntityId?: string;
+  topMatchScore?: number;
+}
+
+export interface WorkbenchTagTaxonomySummary {
+  taxonomyId: string;
+  taxonomyKey: string;
+  label: string;
+  description?: string;
+  taggedEntityCount: number;
+  totalTagCount: number;
+  topTags: Array<{
+    tagCode: string;
+    tagLabel: string;
+    count: number;
+  }>;
 }
 
 export interface WorkbenchCharacterGraphNode {
@@ -232,6 +277,9 @@ export interface WorkbenchProjectSnapshot {
   stats: WorkbenchProjectStats;
   volumes: VolumeOutline[];
   characters: CharacterCard[];
+  genericEntities: WorkbenchGenericEntitySummary[];
+  tagTaxonomies: WorkbenchTagTaxonomySummary[];
+  taskTemplates: WorkbenchTaskTemplateSummary[];
   chapters: ChapterCard[];
   graph: WorkbenchCharacterGraph;
   latestChapter?: ChapterCard;
@@ -271,12 +319,14 @@ export interface WorkbenchDocumentWorkspace {
 export class NovelWorkbenchService {
   private readonly projectCatalogRepository: SqliteProjectCatalogRepository;
   private readonly narrativeAssetRepository: SqliteNarrativeAssetRepository;
+  private readonly genericEntityWorkbenchService: GenericEntityWorkbenchService;
   private readonly syncSourceRepository: SqliteSyncSourceRepository;
   private readonly syncWorkflowRepository: SqliteSyncWorkflowRepository;
 
   constructor(private readonly client: SqliteClient = getSqliteClient()) {
     this.projectCatalogRepository = new SqliteProjectCatalogRepository(client);
     this.narrativeAssetRepository = new SqliteNarrativeAssetRepository(client);
+    this.genericEntityWorkbenchService = new GenericEntityWorkbenchService(client);
     this.syncSourceRepository = new SqliteSyncSourceRepository(client);
     this.syncWorkflowRepository = new SqliteSyncWorkflowRepository(client);
   }
@@ -315,11 +365,14 @@ export class NovelWorkbenchService {
       return null;
     }
 
-    const [characters, chapters, volumes, foreshadows, fileSources, reviewRows, sourceRefs, assetUpdates, followUpTaskStates] = await Promise.all([
+    const [characters, chapters, volumes, foreshadows, genericEntities, taskTemplates, tagTaxonomies, fileSources, reviewRows, sourceRefs, assetUpdates, followUpTaskStates] = await Promise.all([
       this.narrativeAssetRepository.listCharacters(work.id),
       this.narrativeAssetRepository.listChapters(work.id),
       this.listVolumes(work.id),
       this.listForeshadows(work.id),
+      this.genericEntityWorkbenchService.listEntities(work.id),
+      this.genericEntityWorkbenchService.listTaskTemplates(work.id),
+      this.genericEntityWorkbenchService.listTagTaxonomyProjections(work.id),
       this.syncSourceRepository.listFileSources(work.id),
       this.syncWorkflowRepository.listReviewQueue(work.id, "pending"),
       this.syncWorkflowRepository.listSourceRefs({ projectId: work.id }),
@@ -379,6 +432,49 @@ export class NovelWorkbenchService {
     const fileSourceSummaries = fileSources.map((fileSource) =>
       this.createFileSourceSummary(fileSource, sourceDocumentsByFileSource.get(fileSource.id) ?? [], reviewRows),
     );
+    const genericEntitySummaries = await Promise.all(
+      genericEntities.map(async (entity) => {
+        const bundle = await this.genericEntityWorkbenchService.getEntityBundle(entity.id);
+        return {
+          entityId: entity.id,
+          entityType: entity.entityType,
+          canonicalName: entity.canonicalName,
+          displayName: entity.displayName,
+          summary: entity.summary ?? undefined,
+          edgeCount: bundle?.edges.length ?? 0,
+          panelValueCount: bundle?.panelValues.length ?? 0,
+          tagCount: bundle?.tags.length ?? 0,
+        } satisfies WorkbenchGenericEntitySummary;
+      }),
+    );
+    const taskTemplateSummaries = await Promise.all(
+      taskTemplates.map(async (template) => {
+        const bundle = await this.genericEntityWorkbenchService.getTaskBundle(template.id);
+        const topMatch = bundle?.matches.at(-1);
+        return {
+          taskTemplateId: template.id,
+          templateKey: template.templateKey,
+          label: template.label,
+          taskType: template.taskType,
+          requirementCount: bundle?.requirements.length ?? 0,
+          assignmentCount: bundle?.assignments.length ?? 0,
+          matchCount: bundle?.matches.length ?? 0,
+          topMatchEntityId: topMatch?.entityId,
+          topMatchScore: topMatch?.matchScore,
+        } satisfies WorkbenchTaskTemplateSummary;
+      }),
+    );
+    const entityTypeCounts = genericEntitySummaries.reduce<Record<string, number>>((accumulator, entity) => {
+      accumulator[entity.entityType] = (accumulator[entity.entityType] ?? 0) + 1;
+      return accumulator;
+    }, {});
+    const nonCharacterEntityCount = Object.entries(entityTypeCounts).reduce((total, [entityType, count]) => {
+      return entityType === "character" ? total : total + count;
+    }, 0);
+    const panelValueCount = genericEntitySummaries.reduce((total, entity) => total + entity.panelValueCount, 0);
+    const entityTagCount = genericEntitySummaries.reduce((total, entity) => total + entity.tagCount, 0);
+    const taskAssignmentCount = taskTemplateSummaries.reduce((total, template) => total + template.assignmentCount, 0);
+    const taskMatchCount = taskTemplateSummaries.reduce((total, template) => total + template.matchCount, 0);
 
     return {
       work,
@@ -386,13 +482,23 @@ export class NovelWorkbenchService {
         volumeCount: volumes.length,
         chapterCount: chapters.length,
         characterCount: characters.length,
+        genericEntityCount: genericEntitySummaries.length,
+        nonCharacterEntityCount,
         foreshadowCount: foreshadows.length,
         relationCount: graph.edges.length,
         sourceCount: fileSourceSummaries.length,
         pendingReviewCount: reviewRows.length,
+        panelValueCount,
+        entityTagCount,
+        taskTemplateCount: taskTemplateSummaries.length,
+        taskAssignmentCount,
+        taskMatchCount,
       },
       volumes,
       characters,
+      genericEntities: genericEntitySummaries,
+      tagTaxonomies,
+      taskTemplates: taskTemplateSummaries,
       chapters,
       graph,
       latestChapter: chapters.at(-1),
@@ -1222,10 +1328,17 @@ export class NovelWorkbenchService {
       volumeCount: 0,
       chapterCount: 0,
       characterCount: 0,
+      genericEntityCount: 0,
+      nonCharacterEntityCount: 0,
       foreshadowCount: 0,
       relationCount: 0,
       sourceCount: 0,
       pendingReviewCount: 0,
+      panelValueCount: 0,
+      entityTagCount: 0,
+      taskTemplateCount: 0,
+      taskAssignmentCount: 0,
+      taskMatchCount: 0,
     };
   }
 
