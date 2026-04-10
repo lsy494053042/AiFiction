@@ -15,6 +15,26 @@ AiFiction 是一个面向长篇小说创作的本地工作系统。
 
 - [系统设计与数据库冻结清单](docs/architecture/system-design.md)
 
+## 核心文档
+
+项目级核心文档固定为 4 + 1 份，协议文档另算：
+
+1. [README.md](README.md)
+   作用：项目入口、总览、目录结构、默认工作流与常用命令。
+2. [操作手册](docs/operations/workbench-operations-manual.md)
+   作用：面向实际使用的操作说明与推荐流程。
+3. [系统设计与数据库冻结清单](docs/architecture/system-design.md)
+   作用：主架构文档，冻结边界、分层、核心对象与总原则。
+4. [项目进度](docs/project/project-progress.md)
+   作用：当前主线、当前阶段、已完成、下一步。
+5. [默认架构收口方案](docs/architecture/default-architecture-convergence.md)
+   作用：后加的收口与完全插件化路线文档，服务当前主线。
+
+说明：
+
+- 协议文档 `workspace.yml` 与 `books/<作品>/book.yml` 独立存在，不算在这 4 + 1 份里。
+- [写作知识系统说明](docs/architecture/writing-knowledge-system.md) 已并入主文档，不再作为独立核心文档维护。
+
 ## 目录结构
 
 ```text

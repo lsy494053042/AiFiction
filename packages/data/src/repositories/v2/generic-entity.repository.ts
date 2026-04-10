@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, like, notInArray } from "drizzle-orm";
 
 import type { JsonObject } from "../../foundation/base-columns";
 import type { RepositoryWriteContext } from "../../contracts/repository-contracts";
@@ -266,6 +266,25 @@ export class SqliteGenericEntityRepository {
       });
   }
 
+  async deleteEntitiesByPrefix(input: {
+    projectId: string;
+    idPrefix: string;
+    keepEntityIds?: string[];
+  }): Promise<void> {
+    await ensureSqliteV2Bootstrap(this.client);
+
+    const filters = [
+      eq(entitiesV2Table.projectId, input.projectId),
+      like(entitiesV2Table.id, `${input.idPrefix}%`),
+    ];
+
+    if (input.keepEntityIds?.length) {
+      filters.push(notInArray(entitiesV2Table.id, input.keepEntityIds));
+    }
+
+    await this.client.db.delete(entitiesV2Table).where(and(...filters));
+  }
+
   async replaceEntityAliases(
     entityId: string,
     aliases: GenericEntityAliasInput[],
@@ -408,37 +427,108 @@ export class SqliteGenericEntityRepository {
 
     const timestamp = nowIsoString();
     await this.client.db.transaction(async (tx) => {
-      await tx.delete(panelFieldsV2Table).where(eq(panelFieldsV2Table.templateId, templateId));
+      const existingRows = await tx
+        .select({
+          id: panelFieldsV2Table.id,
+          fieldKey: panelFieldsV2Table.fieldKey,
+          createdAt: panelFieldsV2Table.createdAt,
+          version: panelFieldsV2Table.version,
+        })
+        .from(panelFieldsV2Table)
+        .where(eq(panelFieldsV2Table.templateId, templateId));
+      const existingById = new Map(existingRows.map((row) => [row.id, row]));
+      const nextFieldIds = fields.map((field) => buildPanelFieldId(templateId, field.fieldKey));
 
-      if (!fields.length) {
+      if (fields.length) {
+        await tx
+          .update(panelFieldsV2Table)
+          .set({
+            ...buildLifecycleValues({
+              status: "deleted",
+              timestamp,
+              metaJson: {
+                source: context?.source ?? "generic-entity",
+              },
+              extraJson: {},
+            }),
+            deletedAt: timestamp,
+          })
+          .where(and(eq(panelFieldsV2Table.templateId, templateId), notInArray(panelFieldsV2Table.id, nextFieldIds)));
+      } else {
+        await tx
+          .update(panelFieldsV2Table)
+          .set({
+            ...buildLifecycleValues({
+              status: "deleted",
+              timestamp,
+              metaJson: {
+                source: context?.source ?? "generic-entity",
+              },
+              extraJson: {},
+            }),
+            deletedAt: timestamp,
+          })
+          .where(eq(panelFieldsV2Table.templateId, templateId));
         return;
       }
 
-      await tx.insert(panelFieldsV2Table).values(
-        fields.map((field) => ({
-          id: buildPanelFieldId(templateId, field.fieldKey),
-          templateId,
-          fieldKey: field.fieldKey,
-          label: field.label,
-          valueType: field.valueType,
-          cardinality: field.cardinality,
-          displayGroup: field.displayGroup ?? null,
-          isSearchable: field.isSearchable,
-          isFilterable: field.isFilterable,
-          isTimelineTracked: field.isTimelineTracked,
-          defaultValueJson: field.defaultValueJson ?? null,
-          sortOrder: field.sortOrder,
-          ...buildLifecycleValues({
-            status: "active",
-            timestamp,
-            metaJson: {
-              source: context?.source ?? "generic-entity",
-              ...field.metaJson,
+      for (const field of fields) {
+        const fieldId = buildPanelFieldId(templateId, field.fieldKey);
+        const existing = existingById.get(fieldId);
+
+        await tx
+          .insert(panelFieldsV2Table)
+          .values({
+            id: fieldId,
+            templateId,
+            fieldKey: field.fieldKey,
+            label: field.label,
+            valueType: field.valueType,
+            cardinality: field.cardinality,
+            displayGroup: field.displayGroup ?? null,
+            isSearchable: field.isSearchable,
+            isFilterable: field.isFilterable,
+            isTimelineTracked: field.isTimelineTracked,
+            defaultValueJson: field.defaultValueJson ?? null,
+            sortOrder: field.sortOrder,
+            ...buildLifecycleValues({
+              existing,
+              status: "active",
+              timestamp,
+              metaJson: {
+                source: context?.source ?? "generic-entity",
+                ...field.metaJson,
+              },
+              extraJson: field.extraJson ?? {},
+            }),
+          })
+          .onConflictDoUpdate({
+            target: panelFieldsV2Table.id,
+            set: {
+              templateId,
+              fieldKey: field.fieldKey,
+              label: field.label,
+              valueType: field.valueType,
+              cardinality: field.cardinality,
+              displayGroup: field.displayGroup ?? null,
+              isSearchable: field.isSearchable,
+              isFilterable: field.isFilterable,
+              isTimelineTracked: field.isTimelineTracked,
+              defaultValueJson: field.defaultValueJson ?? null,
+              sortOrder: field.sortOrder,
+              ...buildLifecycleValues({
+                existing,
+                status: "active",
+                timestamp,
+                metaJson: {
+                  source: context?.source ?? "generic-entity",
+                  ...field.metaJson,
+                },
+                extraJson: field.extraJson ?? {},
+              }),
             },
-            extraJson: field.extraJson ?? {},
-          }),
-        })),
-      );
+          });
+      }
     });
   }
 

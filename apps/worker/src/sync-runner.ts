@@ -1,6 +1,12 @@
 import path from "node:path";
 
-import { getSqliteClient, NovelProjectSyncService, resolveWorkspaceRoot, SqliteProjectCatalogRepository } from "@aifiction/data";
+import {
+  assertAifictionPreflight,
+  getSqliteClient,
+  NovelProjectSyncService,
+  resolveWorkspaceRoot,
+  SqliteProjectCatalogRepository,
+} from "@aifiction/data";
 
 interface SyncRunnerOptions {
   project?: string;
@@ -124,8 +130,33 @@ function printScanSummary(summary: Awaited<ReturnType<NovelProjectSyncService["s
   console.log(`- Conflict items: ${summary.autoRoute.conflictReviewCount}`);
 }
 
+function runSyncRunnerPreflight(options: SyncRunnerOptions) {
+  if (options.listProjects) {
+    assertAifictionPreflight({
+      commandLabel: "worker:sync:list-projects",
+      mode: "workspace",
+    });
+    return;
+  }
+
+  if (options.sourceId) {
+    assertAifictionPreflight({
+      commandLabel: "worker:sync:scan-source",
+      mode: "workspace",
+    });
+    return;
+  }
+
+  assertAifictionPreflight({
+    commandLabel: options.listSources ? "worker:sync:list-sources" : "worker:sync:bind-source",
+    mode: options.project ? "book" : "workspace",
+    requestedBookSlug: options.project,
+  });
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  runSyncRunnerPreflight(options);
   const client = getSqliteClient();
   const projectRepository = new SqliteProjectCatalogRepository(client);
   const syncService = new NovelProjectSyncService(client);

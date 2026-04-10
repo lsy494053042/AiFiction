@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, like } from "drizzle-orm";
 
 import { type SqliteClient, getSqliteClient } from "../../client";
 import { ensureSqliteV2Bootstrap } from "../../v2/bootstrap";
@@ -482,6 +482,32 @@ export class SqliteSyncWorkflowRepository {
       });
 
     return sourceRefId;
+  }
+
+  async deleteSourceRefs(input: {
+    projectId: string;
+    assetType?: string;
+    assetIdPrefix?: string;
+    sourceDocumentId?: string;
+    referenceKind?: string;
+  }): Promise<void> {
+    await ensureSqliteV2Bootstrap(this.client);
+
+    const filters = [eq(sourceRefsV2Table.projectId, input.projectId)];
+    if (input.assetType) {
+      filters.push(eq(sourceRefsV2Table.assetType, input.assetType));
+    }
+    if (input.assetIdPrefix) {
+      filters.push(like(sourceRefsV2Table.assetId, `${input.assetIdPrefix}%`));
+    }
+    if (input.sourceDocumentId) {
+      filters.push(eq(sourceRefsV2Table.sourceDocumentId, input.sourceDocumentId));
+    }
+    if (input.referenceKind) {
+      filters.push(eq(sourceRefsV2Table.referenceKind, input.referenceKind));
+    }
+
+    await this.client.db.delete(sourceRefsV2Table).where(and(...filters));
   }
 
   async listSourceRefs(input: {

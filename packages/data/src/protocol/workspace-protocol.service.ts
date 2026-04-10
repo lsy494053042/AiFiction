@@ -7,6 +7,12 @@ import type { WorkProfile } from "@aifiction/schemas";
 
 import { type SqliteClient, getSqliteClient, resolveWorkspaceRoot } from "../client";
 import {
+  type AifictionWorkspacePluginConfig,
+  ensureWorkspaceAifictionPluginsRegistered,
+  type LegacySourceDocumentFieldKey,
+  getAifictionPluginRegistry,
+} from "../plugins";
+import {
   SqliteKnowledgeMethodRepository,
   SqliteProjectCatalogRepository,
   SqliteSyncSourceRepository,
@@ -14,7 +20,15 @@ import {
   type SyncFileSourceRecord,
 } from "../repositories/v2";
 import { ensureSqliteV2Bootstrap } from "../v2/bootstrap";
-import { NovelWorkbenchService, type WorkbenchProjectSnapshot, type WorkbenchReviewBundleSummary } from "../workbench";
+import {
+  NovelWorkbenchService,
+  type WorkbenchProjectSnapshot,
+  type WorkbenchReviewBundleSummary,
+  type WorkbenchSourceDocumentSemanticEntitySummary,
+  type WorkbenchSourceDocumentSemanticSummary,
+  type WorkbenchSourceRefSummary,
+} from "../workbench";
+import { defaultWorkspaceBookStarters, mergeWorkspaceBookStarters } from "./starter-profiles";
 
 interface WorkspaceBookIndexEntry {
   book_id: string;
@@ -71,6 +85,38 @@ interface WorkspaceExecutionPolicyProtocol {
   root_cause_first?: WorkspaceExecutionPolicyRootCauseProtocol;
 }
 
+interface WorkspacePluginsProtocol extends AifictionWorkspacePluginConfig {}
+
+export interface WorkspaceStarterProfileChapterTargetProtocol {
+  min?: number;
+  max?: number;
+}
+
+export interface WorkspaceStarterProfileProtocol {
+  profile_key?: string;
+  label?: string;
+  description?: string;
+  genre?: string;
+  subgenre?: string;
+  target_platform?: string;
+  total_target_word_count?: number;
+  stop_loss_word_count?: number;
+  chapter_target_word_count?: WorkspaceStarterProfileChapterTargetProtocol;
+  daily_word_target?: number;
+  update_cadence?: string;
+  plugin_bundles?: string[];
+  hard_constraints?: string[];
+  focus_task_type?: string;
+  focus_task_label?: string;
+  focus_goal?: string;
+  focus_summary?: string;
+}
+
+export interface WorkspaceBookStartersProtocol {
+  default_profile_key?: string;
+  profiles?: WorkspaceStarterProfileProtocol[];
+}
+
 export interface WorkspaceKnowledgeWorkflowProtocol {
   batch_size?: number;
   require_batch_review_before_next_batch?: boolean;
@@ -91,6 +137,8 @@ export interface WorkspaceProtocol {
   default_book_id?: string;
   book_index: WorkspaceBookIndexEntry[];
   defaults?: WorkspaceDefaults;
+  plugins?: WorkspacePluginsProtocol;
+  book_starters?: WorkspaceBookStartersProtocol;
   knowledge_workflow?: WorkspaceKnowledgeWorkflowProtocol;
   execution_policy?: WorkspaceExecutionPolicyProtocol;
   task_routing?: Record<string, Record<string, unknown>>;
@@ -104,12 +152,23 @@ interface BookPathsProtocol {
   artifacts_dir?: string;
 }
 
+interface BookSourceDocumentProtocol {
+  doc_kind?: string;
+  template_key?: string;
+  relative_path?: string;
+  scope?: string;
+  is_source_of_truth?: boolean;
+  priority?: number;
+  sync_policy?: string;
+}
+
 interface BookSourceOfTruthProtocol {
   project_brief?: string;
   world_settings?: string;
   character_settings?: string;
   master_outline?: string;
   active_volume_outline?: string;
+  documents?: BookSourceDocumentProtocol[];
 }
 
 interface BookCurrentFocusProtocol {
@@ -117,6 +176,78 @@ interface BookCurrentFocusProtocol {
   task_label?: string;
   goal?: string;
   summary?: string;
+}
+
+interface BookPublicationChapterTargetProtocol {
+  min?: number;
+  max?: number;
+  locked?: boolean;
+}
+
+interface BookPublicationProtocol {
+  target_platform?: string;
+  platform_notes?: string;
+  target_platform_locked?: boolean;
+  total_target_word_count?: number;
+  total_target_word_count_locked?: boolean;
+  stop_loss_word_count?: number;
+  stop_loss_word_count_locked?: boolean;
+  chapter_target_word_count?: BookPublicationChapterTargetProtocol;
+  daily_word_target?: number;
+  update_cadence?: string;
+}
+
+interface BookEvaluationPolicyProtocol {
+  use_workspace_stop_loss_rule?: boolean;
+  override_stop_loss_word_count?: number;
+}
+
+interface BookPlanningBudgetChapterTargetProtocol {
+  min?: number;
+  max?: number;
+}
+
+interface BookPlanningBudgetVolumeTargetProtocol {
+  chapters_min?: number;
+  chapters_max?: number;
+  chars_min?: number;
+  chars_max?: number;
+}
+
+interface BookPlanningBudgetGateProtocol {
+  require_check_before_next_batch?: boolean;
+  current_status?: string;
+  blocking_reason?: string;
+}
+
+interface BookPlanningBudgetProtocol {
+  sizing_method?: string;
+  chapter_target_chars?: BookPlanningBudgetChapterTargetProtocol;
+  volume_target?: BookPlanningBudgetVolumeTargetProtocol;
+  budget_gate?: BookPlanningBudgetGateProtocol;
+}
+
+interface BookPrewriteGateProtocol {
+  require_full_volume_plan_before_drafting?: boolean;
+  current_platform_locked?: boolean;
+  current_stop_loss_locked?: boolean;
+  current_total_target_locked?: boolean;
+  current_chapter_target_locked?: boolean;
+  current_volume_plan_complete?: boolean;
+  current_stage_map_complete?: boolean;
+  current_chapter_function_mix_defined?: boolean;
+  current_transition_daily_slots_defined?: boolean;
+  current_full_chapter_positioning_complete?: boolean;
+  current_batch_outline_complete?: boolean;
+  current_volume_sized_by_content_first?: boolean;
+  current_volume_budget_locked?: boolean;
+  current_budget_alignment_verified?: boolean;
+  current_batch_ready_to_write?: boolean;
+}
+
+interface BookRhythmPlanProtocol {
+  chapter_function_mix?: Record<string, string>;
+  hard_rules?: string[];
 }
 
 interface BookLastOutputsProtocol {
@@ -175,6 +306,7 @@ interface BookExecutionControlsProtocol {
 export interface BookProtocol {
   book_id: string;
   title: string;
+  starter_profile_key?: string;
   genre?: string;
   platform?: string;
   stage?: string;
@@ -184,7 +316,12 @@ export interface BookProtocol {
   paths?: BookPathsProtocol;
   source_of_truth?: BookSourceOfTruthProtocol;
   current_focus?: BookCurrentFocusProtocol;
+  publication?: BookPublicationProtocol;
+  evaluation_policy?: BookEvaluationPolicyProtocol;
   hard_constraints?: string[];
+  planning_budget?: BookPlanningBudgetProtocol;
+  prewrite_gate?: BookPrewriteGateProtocol;
+  rhythm_plan?: BookRhythmPlanProtocol;
   execution_controls?: BookExecutionControlsProtocol;
   knowledge_state?: BookKnowledgeStateProtocol;
   last_outputs?: BookLastOutputsProtocol;
@@ -346,7 +483,7 @@ interface KnowledgeCandidatesArtifactData {
   candidates: KnowledgeCandidateRecord[];
 }
 
-interface WritingPackGateStatusRecord {
+export interface WritingPackGateStatusRecord {
   gateCode: string;
   gateStatus: string;
   note?: string;
@@ -361,6 +498,7 @@ export class WorkspaceProtocolService {
 
   constructor(private readonly client: SqliteClient = getSqliteClient()) {
     this.workspaceRoot = resolveWorkspaceRoot();
+    ensureWorkspaceAifictionPluginsRegistered(this.workspaceRoot);
     this.knowledgeMethodRepository = new SqliteKnowledgeMethodRepository(client);
     this.projectCatalogRepository = new SqliteProjectCatalogRepository(client);
     this.syncSourceRepository = new SqliteSyncSourceRepository(client);
@@ -773,6 +911,12 @@ export class WorkspaceProtocolService {
   ): WorkspaceProtocol {
     const current = summary.workspace;
     const currentEntryIndex = current?.book_index.findIndex((entry) => entry.book_id === snapshot.work.slug) ?? -1;
+    const effectiveStarterProfiles = this.resolveEffectiveStarterProfiles(current);
+    const resolvedStarterProfileKey =
+      summary.book?.starter_profile_key ??
+      current?.book_starters?.default_profile_key ??
+      effectiveStarterProfiles.default_profile_key ??
+      defaultWorkspaceBookStarters.default_profile_key;
     const nextEntry: WorkspaceBookIndexEntry = {
       book_id: snapshot.work.slug,
       title: snapshot.work.title,
@@ -789,7 +933,19 @@ export class WorkspaceProtocolService {
       nextBookIndex.push(nextEntry);
     }
 
-    return {
+    const starterProfile = this.resolveStarterProfile(
+      current,
+      resolvedStarterProfileKey,
+    );
+    const defaultBundleIds = Array.from(
+      new Set(
+        ["core-default", ...(starterProfile?.plugin_bundles ?? [])].filter(
+          (value): value is string => typeof value === "string" && value.length > 0,
+        ),
+      ),
+    );
+
+    const nextWorkspace: WorkspaceProtocol = {
       workspace_id: current?.workspace_id ?? "aifiction-workspace",
       workspace_name: current?.workspace_name ?? "AiFiction 工作区",
       root_dir: current?.root_dir ?? this.toDisplayPath(this.workspaceRoot),
@@ -803,6 +959,20 @@ export class WorkspaceProtocolService {
         auto_sync_after_finalize: current?.defaults?.auto_sync_after_finalize ?? true,
         context_pack_dirname: current?.defaults?.context_pack_dirname ?? "03-中间产物/context-packs",
         proposal_dirname: current?.defaults?.proposal_dirname ?? "03-中间产物/proposals",
+      },
+      plugins: {
+        api_version: current?.plugins?.api_version ?? "1",
+        bundles: current?.plugins?.bundles?.length ? current.plugins.bundles : defaultBundleIds,
+        enabled: current?.plugins?.enabled?.length ? current.plugins.enabled : [],
+        disabled: current?.plugins?.disabled?.length ? current.plugins.disabled : [],
+        strict_mode: current?.plugins?.strict_mode ?? false,
+      },
+      book_starters: {
+        default_profile_key:
+          current?.book_starters?.default_profile_key ??
+          effectiveStarterProfiles.default_profile_key ??
+          defaultWorkspaceBookStarters.default_profile_key,
+        profiles: current?.book_starters?.profiles?.length ? current.book_starters.profiles : effectiveStarterProfiles.profiles ?? [],
       },
       knowledge_workflow: {
         batch_size: current?.knowledge_workflow?.batch_size ?? 10,
@@ -833,7 +1003,16 @@ export class WorkspaceProtocolService {
         enabled_gates:
           current?.knowledge_workflow?.enabled_gates?.length
             ? current.knowledge_workflow.enabled_gates
-            : ["batch-review-required", "meta-language-check", "continuity-review", "anchoring-review", "opening-arc-review"],
+            : [
+                "batch-review-required",
+                "meta-language-check",
+                "continuity-review",
+                "anchoring-review",
+                "opening-arc-review",
+                "prewrite-plan-required",
+                "rhythm-plan-required",
+                "volume-budget-check",
+              ],
       },
       execution_policy: {
         planning_first: {
@@ -884,6 +1063,10 @@ export class WorkspaceProtocolService {
         },
       },
     };
+
+    return starterProfile
+      ? this.applyStarterProfileWorkspaceProtocolOverlays(nextWorkspace, summary, snapshot, starterProfile)
+      : nextWorkspace;
   }
 
   private buildBookProtocol(
@@ -891,6 +1074,10 @@ export class WorkspaceProtocolService {
     snapshot: WorkbenchProjectSnapshot,
   ): BookProtocol {
     const existing = summary.book;
+    const starterProfile = this.resolveStarterProfile(
+      summary.workspace,
+      existing?.starter_profile_key ?? summary.workspace?.book_starters?.default_profile_key,
+    );
     const fileSource = snapshot.fileSources[0];
     const chapterDir = this.resolveRelativeDirectory(summary.bookRootPath, fileSource?.chapterPath, "02-正文");
     const outlineDir = this.resolveRelativeDirectory(summary.bookRootPath, fileSource?.outlinePath, "01-大纲");
@@ -904,12 +1091,31 @@ export class WorkspaceProtocolService {
     const activeChapter = existing?.active_chapter ?? latestChapter?.order ?? 1;
     const batchSize = summary.workspace?.knowledge_workflow?.batch_size ?? 10;
     const defaultBatchId = this.createDefaultBatchId(activeVolume, activeChapter, batchSize);
+    const publication = existing?.publication;
+    const planningBudget = existing?.planning_budget;
+    const prewriteGate = existing?.prewrite_gate;
+    const chapterTargetMin =
+      publication?.chapter_target_word_count?.min ??
+      starterProfile?.chapter_target_word_count?.min ??
+      planningBudget?.chapter_target_chars?.min ??
+      2000;
+    const chapterTargetMax =
+      publication?.chapter_target_word_count?.max ??
+      starterProfile?.chapter_target_word_count?.max ??
+      planningBudget?.chapter_target_chars?.max ??
+      2500;
+    const sourceOfTruth = this.buildSourceOfTruthProtocol(existing?.source_of_truth, settingsDir, outlineDir);
 
-    return {
+    const nextBook: BookProtocol = {
       book_id: snapshot.work.slug,
       title: snapshot.work.title,
+      starter_profile_key: existing?.starter_profile_key ?? starterProfile?.profile_key,
       genre: snapshot.work.genre,
-      platform: snapshot.work.targetPlatform,
+      platform:
+        existing?.platform ??
+        publication?.target_platform ??
+        starterProfile?.target_platform ??
+        snapshot.work.targetPlatform,
       stage: existing?.stage ?? (snapshot.work.status === "planning" ? "planning" : "drafting"),
       status: snapshot.work.status,
       active_volume: activeVolume,
@@ -921,26 +1127,140 @@ export class WorkspaceProtocolService {
         chapters_dir: chapterDir,
         artifacts_dir: existing?.paths?.artifacts_dir ?? "03-中间产物",
       },
-      source_of_truth: {
-        project_brief: existing?.source_of_truth?.project_brief ?? `${settingsDir}/作品定位.md`,
-        world_settings: existing?.source_of_truth?.world_settings ?? `${settingsDir}/世界设定.md`,
-        character_settings: existing?.source_of_truth?.character_settings ?? `${settingsDir}/角色设定.md`,
-        master_outline: existing?.source_of_truth?.master_outline ?? `${outlineDir}/全书大纲.md`,
-        active_volume_outline: existing?.source_of_truth?.active_volume_outline ?? `${outlineDir}/卷一大纲.md`,
-      },
+      source_of_truth: sourceOfTruth,
       current_focus: {
-        task_type: existing?.current_focus?.task_type ?? "write_chapter",
-        task_label: existing?.current_focus?.task_label ?? `写第 ${Math.max((latestChapter?.order ?? 0) + 1, 1)} 章`,
-        goal: existing?.current_focus?.goal ?? snapshot.work.tagline,
-        summary: existing?.current_focus?.summary ?? "继续推进当前主线，确保结构化事实与正文同步。",
+        task_type: existing?.current_focus?.task_type ?? starterProfile?.focus_task_type ?? "write_chapter",
+        task_label:
+          existing?.current_focus?.task_label ??
+          starterProfile?.focus_task_label ??
+          `写第 ${Math.max((latestChapter?.order ?? 0) + 1, 1)} 章`,
+        goal: existing?.current_focus?.goal ?? starterProfile?.focus_goal ?? snapshot.work.tagline,
+        summary:
+          existing?.current_focus?.summary ??
+          starterProfile?.focus_summary ??
+          "继续推进当前主线，确保结构化事实与正文同步。",
       },
-      hard_constraints: existing?.hard_constraints?.length ? existing.hard_constraints : snapshot.work.hardConstraints,
+      publication: {
+        target_platform:
+          publication?.target_platform ?? existing?.platform ?? starterProfile?.target_platform ?? snapshot.work.targetPlatform,
+        platform_notes: publication?.platform_notes,
+        target_platform_locked: publication?.target_platform_locked ?? Boolean(starterProfile?.target_platform),
+        total_target_word_count:
+          publication?.total_target_word_count ?? starterProfile?.total_target_word_count ?? snapshot.work.targetWordCount,
+        total_target_word_count_locked:
+          publication?.total_target_word_count_locked ?? Boolean(starterProfile?.total_target_word_count ?? snapshot.work.targetWordCount),
+        stop_loss_word_count:
+          publication?.stop_loss_word_count ??
+          starterProfile?.stop_loss_word_count ??
+          existing?.evaluation_policy?.override_stop_loss_word_count,
+        stop_loss_word_count_locked:
+          publication?.stop_loss_word_count_locked ??
+          Boolean(
+            publication?.stop_loss_word_count ??
+              starterProfile?.stop_loss_word_count ??
+              existing?.evaluation_policy?.override_stop_loss_word_count,
+          ),
+        chapter_target_word_count: {
+          min: chapterTargetMin,
+          max: chapterTargetMax,
+          locked: publication?.chapter_target_word_count?.locked ?? true,
+        },
+        daily_word_target: publication?.daily_word_target ?? starterProfile?.daily_word_target ?? snapshot.work.dailyWordTarget,
+        update_cadence: publication?.update_cadence ?? starterProfile?.update_cadence ?? snapshot.work.updateCadence,
+      },
+      evaluation_policy: {
+        use_workspace_stop_loss_rule: existing?.evaluation_policy?.use_workspace_stop_loss_rule ?? true,
+        override_stop_loss_word_count:
+          existing?.evaluation_policy?.override_stop_loss_word_count ??
+          publication?.stop_loss_word_count ??
+          starterProfile?.stop_loss_word_count,
+      },
+      hard_constraints:
+        existing?.hard_constraints?.length
+          ? existing.hard_constraints
+          : snapshot.work.hardConstraints.length
+            ? snapshot.work.hardConstraints
+            : starterProfile?.hard_constraints ?? [],
+      planning_budget: {
+        sizing_method: planningBudget?.sizing_method ?? "content-first",
+        chapter_target_chars: {
+          min: planningBudget?.chapter_target_chars?.min ?? chapterTargetMin,
+          max: planningBudget?.chapter_target_chars?.max ?? chapterTargetMax,
+        },
+        volume_target: {
+          chapters_min: planningBudget?.volume_target?.chapters_min ?? 0,
+          chapters_max: planningBudget?.volume_target?.chapters_max ?? 0,
+          chars_min: planningBudget?.volume_target?.chars_min ?? 0,
+          chars_max: planningBudget?.volume_target?.chars_max ?? 0,
+        },
+        budget_gate: {
+          require_check_before_next_batch:
+            planningBudget?.budget_gate?.require_check_before_next_batch ?? true,
+          current_status: planningBudget?.budget_gate?.current_status ?? "pending",
+          blocking_reason: planningBudget?.budget_gate?.blocking_reason,
+        },
+      },
+      prewrite_gate: {
+        require_full_volume_plan_before_drafting:
+          prewriteGate?.require_full_volume_plan_before_drafting ?? true,
+        current_platform_locked: prewriteGate?.current_platform_locked ?? Boolean(starterProfile?.target_platform),
+        current_stop_loss_locked:
+          prewriteGate?.current_stop_loss_locked ??
+          Boolean(starterProfile?.stop_loss_word_count ?? publication?.stop_loss_word_count),
+        current_total_target_locked:
+          prewriteGate?.current_total_target_locked ??
+          Boolean(starterProfile?.total_target_word_count ?? publication?.total_target_word_count),
+        current_chapter_target_locked: prewriteGate?.current_chapter_target_locked ?? true,
+        current_volume_plan_complete: prewriteGate?.current_volume_plan_complete ?? false,
+        current_stage_map_complete: prewriteGate?.current_stage_map_complete ?? false,
+        current_chapter_function_mix_defined: prewriteGate?.current_chapter_function_mix_defined ?? false,
+        current_transition_daily_slots_defined: prewriteGate?.current_transition_daily_slots_defined ?? false,
+        current_full_chapter_positioning_complete:
+          prewriteGate?.current_full_chapter_positioning_complete ?? false,
+        current_batch_outline_complete: prewriteGate?.current_batch_outline_complete ?? false,
+        current_volume_sized_by_content_first: prewriteGate?.current_volume_sized_by_content_first ?? false,
+        current_volume_budget_locked: prewriteGate?.current_volume_budget_locked ?? false,
+        current_budget_alignment_verified: prewriteGate?.current_budget_alignment_verified ?? false,
+        current_batch_ready_to_write: prewriteGate?.current_batch_ready_to_write ?? false,
+      },
+      rhythm_plan: {
+        chapter_function_mix:
+          existing?.rhythm_plan?.chapter_function_mix ?? {
+            main_push: "35-45%",
+            transition: "15-25%",
+            relationship: "10-20%",
+            daily_life: "10-15%",
+            information: "10-15%",
+            payoff: "5-10%",
+          },
+        hard_rules:
+          existing?.rhythm_plan?.hard_rules?.length
+            ? existing.rhythm_plan.hard_rules
+            : [
+                "强钩子次章必须先接，不允许直接跳到第二天。",
+                "每个阶段至少保留一章关系章和一章日常/缓冲章。",
+                "基础信息要早清楚，核心真相可以后置。",
+                "每章先定义功能，再决定是否进入正文。",
+              ],
+      },
       execution_controls: {
         planning_first: {
           required_prewrite_sequence:
             existing?.execution_controls?.planning_first?.required_prewrite_sequence?.length
               ? existing.execution_controls.planning_first.required_prewrite_sequence
-              : ["full-volume-plan", "stage-map", "chapter-function-mix", "transition-and-daily-slots", "current-batch-outline"],
+              : [
+                  "platform-lock",
+                  "stop-loss-lock",
+                  "total-word-target-lock",
+                  "chapter-word-target-lock",
+                  "volume-budget-content-first",
+                  "full-volume-plan",
+                  "stage-map",
+                  "chapter-function-mix",
+                  "transition-and-daily-slots",
+                  "full-volume-chapter-positioning",
+                  "current-batch-outline",
+                ],
         },
         verification_before_completion: {
           require_evidence_before_mark_done:
@@ -998,6 +1318,10 @@ export class WorkspaceProtocolService {
           : ["factual-conflict", "timeline-conflict", "major-relationship-shift", "rule-break"],
       },
     };
+
+    return starterProfile
+      ? this.applyStarterProfileBookProtocolOverlays(nextBook, summary, snapshot, starterProfile)
+      : nextBook;
   }
 
   private buildWritingPackMarkdown(
@@ -1010,10 +1334,17 @@ export class WorkspaceProtocolService {
     const recentChapters = [...snapshot.chapters].slice(-3).reverse();
     const recentCharacters = snapshot.characters.slice(0, 5);
     const relevantGenericEntities = snapshot.genericEntities.slice(0, 8);
+    const semanticContext = this.buildWritingPackSemanticContext(snapshot);
+    const relevantSemanticDocuments = semanticContext.documents;
+    const relevantSemanticHighlights = semanticContext.highlights;
     const relevantTagTaxonomies = snapshot.tagTaxonomies.slice(0, 5);
     const relevantTaskTemplates = snapshot.taskTemplates.slice(0, 5);
     const sourceOfTruth = book.source_of_truth ?? {};
+    const registeredSourceDocuments = this.collectSourceOfTruthDocuments(sourceOfTruth);
     const hardConstraints = book.hard_constraints ?? [];
+    const publication = book.publication;
+    const planningBudget = book.planning_budget;
+    const prewriteGate = book.prewrite_gate;
     const knowledgeWorkflow = summary.knowledgeWorkflow;
     const knowledgeState = book.knowledge_state;
     const enabledRuleSets = this.readStringArray(knowledgeState?.enabled_rule_sets);
@@ -1023,9 +1354,33 @@ export class WorkspaceProtocolService {
     const nextRequiredReviewAtChapter = this.readNumber(knowledgeState?.next_required_review_at_chapter);
     const activeKnowledgeItems = knowledgeItems.slice(0, knowledgeWorkflow?.active_budget?.batch_focus_findings ?? 5);
     const writingGateAssessment = this.assessWritingPackGateState(summary, book, gateStatuses);
+    const chapterTarget = publication?.chapter_target_word_count;
+    const volumeTarget = planningBudget?.volume_target;
+    const rhythmMix = Object.entries(book.rhythm_plan?.chapter_function_mix ?? {});
+    const volumeTargetLocked =
+      [volumeTarget?.chapters_min, volumeTarget?.chapters_max, volumeTarget?.chars_min, volumeTarget?.chars_max].every(
+        (value) => typeof value === "number" && value > 0,
+      );
+    const volumeTargetSummary = volumeTargetLocked
+      ? `章节 ${volumeTarget?.chapters_min}-${volumeTarget?.chapters_max} / 字数 ${volumeTarget?.chars_min}-${volumeTarget?.chars_max}`
+      : "未锁定";
     const gateLines = gateStatuses.length
       ? gateStatuses.map((gate) => `- ${gate.gateCode}：${gate.gateStatus}${gate.note ? `（${gate.note}）` : ""}`)
       : ["- 当前没有可用的 gate 状态。"];
+
+    const sourceAnchorLines = [
+      `- 作品定位：${sourceOfTruth.project_brief ?? "待补"}`,
+      `- 世界设定：${sourceOfTruth.world_settings ?? "待补"}`,
+      `- 角色设定：${sourceOfTruth.character_settings ?? "待补"}`,
+    ];
+
+    if (sourceOfTruth.master_outline) {
+      sourceAnchorLines.push(`- 全书大纲：${sourceOfTruth.master_outline}`);
+    }
+
+    if (sourceOfTruth.active_volume_outline) {
+      sourceAnchorLines.push(`- 当前卷纲：${sourceOfTruth.active_volume_outline}`);
+    }
 
     const lines = [
       `# 写作包：${snapshot.work.title}`,
@@ -1040,14 +1395,60 @@ export class WorkspaceProtocolService {
       "## 关键锚点",
       `- 协议文件：${this.toDisplayPath(summary.bookFilePath)}`,
       `- 作品目录：${this.toDisplayPath(summary.bookRootPath)}`,
-      `- 作品定位：${sourceOfTruth.project_brief ?? "待补"}`,
-      `- 世界设定：${sourceOfTruth.world_settings ?? "待补"}`,
-      `- 角色设定：${sourceOfTruth.character_settings ?? "待补"}`,
-      `- 全书大纲：${sourceOfTruth.master_outline ?? "待补"}`,
-      `- 当前卷纲：${sourceOfTruth.active_volume_outline ?? "待补"}`,
+      ...sourceAnchorLines,
+      "",
+      "## 已注册文档",
+      ...(registeredSourceDocuments.length
+        ? registeredSourceDocuments.slice(0, 12).map((document) => {
+            const templateSuffix = document.template_key ? `（模板 ${document.template_key}）` : "";
+            return `- ${document.doc_kind ?? "unknown"}：${document.relative_path}${templateSuffix}`;
+          })
+        : ["- 当前还没有注册文档。"]),
+      "",
+      "## 发布与体量协议",
+      `- 目标平台：${publication?.target_platform ?? book.platform ?? snapshot.work.targetPlatform ?? "未设置"}`,
+      `- 平台是否锁定：${publication?.target_platform_locked ? "是" : "否"}`,
+      `- 平台备注：${publication?.platform_notes ?? "无"}`,
+      `- 全书目标字数：${publication?.total_target_word_count ?? snapshot.work.targetWordCount ?? "未设置"}`,
+      `- 总字数是否锁定：${publication?.total_target_word_count_locked ? "是" : "否"}`,
+      `- 止损线：${publication?.stop_loss_word_count ?? book.evaluation_policy?.override_stop_loss_word_count ?? "未设置"}`,
+      `- 止损线是否锁定：${publication?.stop_loss_word_count_locked ? "是" : "否"}`,
+      `- 单章目标字数：${chapterTarget?.min ?? planningBudget?.chapter_target_chars?.min ?? "未设置"}-${chapterTarget?.max ?? planningBudget?.chapter_target_chars?.max ?? "未设置"}`,
+      `- 单章字数是否锁定：${
+        (chapterTarget?.locked ?? prewriteGate?.current_chapter_target_locked) ? "是" : "否"
+      }`,
+      `- 当前卷体量：${volumeTargetSummary}`,
+      `- 当前卷预算方法：${planningBudget?.sizing_method ?? "未设置"}`,
+      `- 当前卷预算状态：${planningBudget?.budget_gate?.current_status ?? "未设置"}`,
+      `- 当前卷预算阻断原因：${planningBudget?.budget_gate?.blocking_reason ?? "无"}`,
       "",
       "## 必须遵守的硬约束",
       ...(hardConstraints.length ? hardConstraints.map((item) => `- ${item}`) : ["- 当前还没有写入硬约束，请先确认作品定位。"]),
+      "",
+      "## 开写门禁",
+      `- 当前平台已锁定：${prewriteGate?.current_platform_locked ? "是" : "否"}`,
+      `- 当前止损线已锁定：${prewriteGate?.current_stop_loss_locked ? "是" : "否"}`,
+      `- 当前总字数已锁定：${prewriteGate?.current_total_target_locked ? "是" : "否"}`,
+      `- 当前单章字数已锁定：${prewriteGate?.current_chapter_target_locked ? "是" : "否"}`,
+      `- 当前卷规划完成：${prewriteGate?.current_volume_plan_complete ? "是" : "否"}`,
+      `- 当前阶段地图完成：${prewriteGate?.current_stage_map_complete ? "是" : "否"}`,
+      `- 当前章节功能配比完成：${prewriteGate?.current_chapter_function_mix_defined ? "是" : "否"}`,
+      `- 当前过渡与日常槽位完成：${prewriteGate?.current_transition_daily_slots_defined ? "是" : "否"}`,
+      `- 当前全章定位完成：${prewriteGate?.current_full_chapter_positioning_complete ? "是" : "否"}`,
+      `- 当前批次章纲完成：${prewriteGate?.current_batch_outline_complete ? "是" : "否"}`,
+      `- 当前卷已按内容优先测算：${prewriteGate?.current_volume_sized_by_content_first ? "是" : "否"}`,
+      `- 当前卷预算已锁定：${prewriteGate?.current_volume_budget_locked ? "是" : "否"}`,
+      `- 当前卷预算已对齐校验：${prewriteGate?.current_budget_alignment_verified ? "是" : "否"}`,
+      `- 当前批次可开写：${prewriteGate?.current_batch_ready_to_write ? "是" : "否"}`,
+      "",
+      "## 候选经验",
+      `- 候选经验文件：${book.last_outputs?.latest_knowledge_candidates_file ?? "尚未生成"}`,
+      `- 候选数量：${knowledgeItems.length}`,
+      ...(activeKnowledgeItems.length
+        ? activeKnowledgeItems.map(
+            (candidate, index) => `- ${index + 1}. ${candidate.title}（${candidate.status} / ${candidate.scope} / ${candidate.domain}）`,
+          )
+        : ["- 当前还没有候选经验对象，写完当前 batch 后请先生成复盘单。"]),
       "",
       "## 知识流程与当前关卡",
       `- 全局 profile：${this.readString(knowledgeState?.active_global_profile) ?? "未设置"}`,
@@ -1068,6 +1469,13 @@ export class WorkspaceProtocolService {
         ? writingGateAssessment.blockers.map((item) => `- ${item}`)
         : ["- 当前没有阻断项，可以继续按当前批次章纲推进正文。"]),
       "",
+      "## 节奏配比",
+      ...(rhythmMix.length
+        ? rhythmMix.map(([key, value]) => `- ${key}：${value}`)
+        : ["- 当前还没有节奏配比数据。"]),
+      ...(book.rhythm_plan?.hard_rules?.length
+        ? ["", "## 节奏硬规则", ...book.rhythm_plan.hard_rules.map((item) => `- ${item}`), ""]
+        : [""]),
       "## 最近章节摘要",
       ...(recentChapters.length
         ? recentChapters.map((chapter) => `- 第 ${chapter.order} 章《${chapter.title}》：${chapter.summary}`)
@@ -1085,6 +1493,18 @@ export class WorkspaceProtocolService {
               `- ${entity.displayName}（${entity.entityType}）：关系 ${entity.edgeCount} / 面板值 ${entity.panelValueCount} / 标签 ${entity.tagCount}${entity.summary ? ` / ${entity.summary}` : ""}`,
           )
         : ["- 当前还没有通用实体投影。"]),
+      "",
+      "## 注册设定语义文档",
+      ...(relevantSemanticDocuments.length
+        ? relevantSemanticDocuments.map((document) => this.formatSourceSemanticDocumentLine(document))
+        : ["- 当前还没有注册设定语义摘要。"]),
+      "",
+      "## 注册设定语义重点",
+      ...(relevantSemanticHighlights.length
+        ? relevantSemanticHighlights.map(({ document, highlight }) =>
+            this.formatSourceSemanticHighlightLine(document, highlight),
+          )
+        : ["- 当前还没有可展示的设定语义重点。"]),
       "",
       "## 标签投影",
       ...(relevantTagTaxonomies.length
@@ -1112,21 +1532,6 @@ export class WorkspaceProtocolService {
         ? [`- 优先完成：${book.current_focus?.summary ?? "继续按照当前焦点任务推进。"} `]
         : writingGateAssessment.nextActions.map((item) => `- ${item}`)),
     ];
-
-    lines.splice(
-      26,
-      0,
-      `- 候选经验文件：${book.last_outputs?.latest_knowledge_candidates_file ?? "尚未生成"}`,
-      "",
-      "## 当前候选经验",
-      `- 候选数量：${knowledgeItems.length}`,
-      ...(activeKnowledgeItems.length
-        ? activeKnowledgeItems.map(
-            (candidate, index) => `- ${index + 1}. ${candidate.title}（${candidate.status} / ${candidate.scope} / ${candidate.domain}）`,
-          )
-        : ["- 当前还没有候选经验对象，写完当前 batch 后请先生成复盘单。"]),
-      "",
-    );
 
     return lines.join("\n");
   }
@@ -1192,22 +1597,48 @@ export class WorkspaceProtocolService {
     blockers: string[];
     nextActions: string[];
   } {
+    const gatePolicy = getAifictionPluginRegistry().getPreferredWritingPackGatePolicy();
+    if (gatePolicy) {
+      try {
+        return gatePolicy.assessWritingPackState({
+          summary,
+          book,
+          gateStatuses,
+        });
+      } catch {
+        // Fallback to the legacy gate assessment when the plugin policy fails.
+      }
+    }
+
     const taskType = this.readString(book.current_focus?.task_type);
     const reviewStatus = this.readString(book.knowledge_state?.current_batch_review_status);
     const planningPolicy = summary.workspace?.execution_policy?.planning_first;
     const verificationPolicy = summary.workspace?.execution_policy?.verification_before_completion;
+    const prewriteBlockers = this.collectPrewriteProtocolBlockers(book, taskType);
 
     const blockers: string[] = [];
     const nextActions: string[] = [];
     let mode: "drafting" | "review" | "planning" = "drafting";
+    const pushBlocker = (message: string) => {
+      if (!blockers.includes(message)) {
+        blockers.push(message);
+      }
+    };
+    const pushAction = (message: string) => {
+      if (!nextActions.includes(message)) {
+        nextActions.push(message);
+      }
+    };
 
     if (
-      planningPolicy?.require_full_volume_plan_before_drafting &&
-      ["planning", "replanning"].includes(taskType ?? "")
+      (planningPolicy?.require_full_volume_plan_before_drafting ?? book.prewrite_gate?.require_full_volume_plan_before_drafting) &&
+      prewriteBlockers.length
     ) {
       mode = "planning";
-      blockers.push("当前焦点仍处于规划态，必须先完成整卷骨架、阶段地图和当前批次章纲。");
-      nextActions.push("先补整卷功能、阶段事件和当前批次章纲，再继续正文。");
+      for (const blocker of prewriteBlockers) {
+        pushBlocker(blocker);
+      }
+      pushAction("先补齐开写前协议门禁，再重新生成写作包。");
     }
 
     if (
@@ -1215,16 +1646,16 @@ export class WorkspaceProtocolService {
       this.readBoolean(book.knowledge_state?.current_batch_review_required) &&
       reviewStatus !== "resolved"
     ) {
-      mode = "review";
-      blockers.push("当前 batch 仍要求先完成复盘，复盘状态未 resolved。");
-      nextActions.push("先完成当前批次复盘，再继续下一批正文。");
+      if (mode !== "planning") {
+        mode = "review";
+      }
+      pushBlocker("当前 batch 仍要求先完成复盘，复盘状态未 resolved。");
+      pushAction("先完成当前批次复盘，再继续下一批正文。");
     }
 
     for (const gate of gateStatuses) {
       if (["pending", "blocked"].includes(gate.gateStatus)) {
-        if (!blockers.includes(`${gate.gateCode} 未通过`)) {
-          blockers.push(`${gate.gateCode} 未通过`);
-        }
+        pushBlocker(`${gate.gateCode} 未通过`);
       }
     }
 
@@ -1243,6 +1674,144 @@ export class WorkspaceProtocolService {
       canDraft: blockers.length === 0,
       blockers,
       nextActions,
+    };
+  }
+
+  private collectPrewriteProtocolBlockers(book: BookProtocol, taskType?: string): string[] {
+    const gatePolicy = getAifictionPluginRegistry().getPreferredWritingPackGatePolicy();
+    if (gatePolicy) {
+      try {
+        return gatePolicy.collectPrewriteProtocolBlockers(book, taskType);
+      } catch {
+        // Fallback to the legacy blocker collection when the plugin policy fails.
+      }
+    }
+
+    const blockers: string[] = [];
+    const prewriteGate = book.prewrite_gate;
+    const planningBudget = book.planning_budget;
+    const volumeTarget = planningBudget?.volume_target;
+    const volumeTargetLocked =
+      [volumeTarget?.chapters_min, volumeTarget?.chapters_max, volumeTarget?.chars_min, volumeTarget?.chars_max].every(
+        (value) => typeof value === "number" && value > 0,
+      );
+
+    const pushBlocker = (message: string) => {
+      if (!blockers.includes(message)) {
+        blockers.push(message);
+      }
+    };
+
+    if (["planning", "replanning"].includes(taskType ?? "")) {
+      pushBlocker("当前焦点仍处于规划态。");
+    }
+    if (prewriteGate?.current_platform_locked !== true) {
+      pushBlocker("目标平台尚未最终锁定。");
+    }
+    if (prewriteGate?.current_stop_loss_locked !== true) {
+      pushBlocker("止损线尚未锁定。");
+    }
+    if (prewriteGate?.current_total_target_locked !== true) {
+      pushBlocker("全书目标字数尚未锁定。");
+    }
+    if (prewriteGate?.current_chapter_target_locked !== true) {
+      pushBlocker("单章目标字数尚未锁定。");
+    }
+    if (prewriteGate?.current_volume_plan_complete !== true) {
+      pushBlocker("整卷功能与卷末兑现点尚未确认完成。");
+    }
+    if (prewriteGate?.current_stage_map_complete !== true) {
+      pushBlocker("当前卷阶段地图尚未完成。");
+    }
+    if (prewriteGate?.current_chapter_function_mix_defined !== true) {
+      pushBlocker("当前卷章节功能配比尚未完成。");
+    }
+    if (prewriteGate?.current_transition_daily_slots_defined !== true) {
+      pushBlocker("过渡章、关系章、日常章位置尚未确认。");
+    }
+    if (prewriteGate?.current_full_chapter_positioning_complete !== true) {
+      pushBlocker("当前卷全章节定位尚未完成。");
+    }
+    if (prewriteGate?.current_batch_outline_complete !== true) {
+      pushBlocker("当前批次详细章纲尚未完成。");
+    }
+    if (prewriteGate?.current_volume_sized_by_content_first !== true) {
+      pushBlocker("当前卷尚未按内容优先法完成体量测算。");
+    }
+    if (prewriteGate?.current_volume_budget_locked !== true) {
+      pushBlocker("当前卷体量尚未锁定。");
+    }
+    if (prewriteGate?.current_budget_alignment_verified !== true || !volumeTargetLocked) {
+      pushBlocker("当前卷章数与卷字数预算尚未完成对齐校验。");
+    }
+    if (prewriteGate?.current_batch_ready_to_write !== true) {
+      pushBlocker("当前批次仍未达到可开写状态。");
+    }
+
+    return blockers;
+  }
+
+  private buildWritingPackSemanticContext(snapshot: WorkbenchProjectSnapshot): {
+    documents: WorkbenchSourceDocumentSemanticSummary[];
+    highlights: Array<{
+      document: WorkbenchSourceDocumentSemanticSummary;
+      highlight: WorkbenchSourceDocumentSemanticEntitySummary;
+    }>;
+  } {
+    const semanticContext = getAifictionPluginRegistry().getPreferredSourceDocumentSemanticContext();
+    if (semanticContext) {
+      try {
+        return semanticContext.buildWritingPackContext(snapshot);
+      } catch {
+        // Fallback to the in-service semantic slicing when the plugin context fails.
+      }
+    }
+
+    const documents = snapshot.sourceDocumentSemantics.slice(0, 6);
+    return {
+      documents,
+      highlights: documents
+        .flatMap((document) =>
+          document.highlights.slice(0, 2).map((highlight) => ({
+            document,
+            highlight,
+          })),
+        )
+        .slice(0, 10),
+    };
+  }
+
+  private buildRiskInvestigationPackSemanticContext(
+    snapshot: WorkbenchProjectSnapshot,
+    bundle: WorkbenchReviewBundleSummary,
+    relatedSourceRefs: WorkbenchSourceRefSummary[],
+  ): {
+    documents: WorkbenchSourceDocumentSemanticSummary[];
+    highlights: Array<{
+      document: WorkbenchSourceDocumentSemanticSummary;
+      highlight: WorkbenchSourceDocumentSemanticEntitySummary;
+    }>;
+  } {
+    const semanticContext = getAifictionPluginRegistry().getPreferredSourceDocumentSemanticContext();
+    if (semanticContext) {
+      try {
+        return semanticContext.buildRiskInvestigationPackContext(snapshot, bundle, relatedSourceRefs);
+      } catch {
+        // Fallback to the in-service semantic slicing when the plugin context fails.
+      }
+    }
+
+    const documents = this.collectRiskPackSemanticDocuments(snapshot, bundle, relatedSourceRefs);
+    return {
+      documents,
+      highlights: documents
+        .flatMap((document) =>
+          document.highlights.slice(0, 2).map((highlight) => ({
+            document,
+            highlight,
+          })),
+        )
+        .slice(0, 8),
     };
   }
 
@@ -1741,6 +2310,9 @@ export class WorkspaceProtocolService {
     const relatedSourceRefs = snapshot.recentSourceRefs.filter((sourceRef) =>
       bundle.sourceDocumentId ? sourceRef.sourceDocumentId === bundle.sourceDocumentId : sourceRef.sourcePath === bundle.sourcePath,
     );
+    const semanticContext = this.buildRiskInvestigationPackSemanticContext(snapshot, bundle, relatedSourceRefs);
+    const relatedSemanticDocuments = semanticContext.documents;
+    const relatedSemanticHighlights = semanticContext.highlights;
 
     return [
       `# 风险排查包：${snapshot.work.title}`,
@@ -1774,11 +2346,85 @@ export class WorkspaceProtocolService {
       "## 证据",
       ...(bundle.latestEvidenceQuote ? [`> ${bundle.latestEvidenceQuote}`] : ["- 当前没有可展示的引用片段。"]),
       "",
+      "## 设定语义基线",
+      ...(relatedSemanticDocuments.length
+        ? relatedSemanticDocuments.map((document) => this.formatSourceSemanticDocumentLine(document))
+        : ["- 当前还没有可用的设定语义基线。"]),
+      ...(relatedSemanticHighlights.length
+        ? ["", "## 设定语义重点", ...relatedSemanticHighlights.map(({ document, highlight }) =>
+            this.formatSourceSemanticHighlightLine(document, highlight),
+          )]
+        : [""]),
       "## 最近来源引用",
       ...(relatedSourceRefs.length
         ? relatedSourceRefs.map((sourceRef) => `- ${sourceRef.assetType} / ${sourceRef.sourcePath ?? sourceRef.locator}`)
         : ["- 当前没有额外来源引用。"]),
     ].join("\n");
+  }
+
+  private collectRiskPackSemanticDocuments(
+    snapshot: WorkbenchProjectSnapshot,
+    bundle: WorkbenchReviewBundleSummary,
+    relatedSourceRefs: WorkbenchSourceRefSummary[],
+  ): WorkbenchSourceDocumentSemanticSummary[] {
+    const directDocumentIds = new Set<string>();
+    if (bundle.sourceDocumentId) {
+      directDocumentIds.add(bundle.sourceDocumentId);
+    }
+
+    for (const sourceRef of relatedSourceRefs) {
+      if (sourceRef.sourceDocumentId) {
+        directDocumentIds.add(sourceRef.sourceDocumentId);
+      }
+    }
+
+    const directMatches = snapshot.sourceDocumentSemantics.filter(
+      (document) => document.sourceDocumentId && directDocumentIds.has(document.sourceDocumentId),
+    );
+    if (directMatches.length) {
+      return directMatches.slice(0, 4);
+    }
+
+    return snapshot.sourceDocumentSemantics.slice(0, 4);
+  }
+
+  private formatSourceSemanticDocumentLine(document: WorkbenchSourceDocumentSemanticSummary): string {
+    const semanticContext = getAifictionPluginRegistry().getPreferredSourceDocumentSemanticContext();
+    if (semanticContext) {
+      try {
+        return semanticContext.formatDocumentLine(document);
+      } catch {
+        // Fallback to the legacy formatter when the plugin formatter fails.
+      }
+    }
+
+    const docLabel = document.relativePath ?? document.title;
+    const groupLabel = document.semanticGroups.length ? document.semanticGroups.join(" / ") : "未分组";
+    const hintLabel = document.reviewHints.length ? ` / 提示：${document.reviewHints.slice(0, 2).join("；")}` : "";
+    return `- ${document.title}（${document.docKind ?? "unknown"} / ${document.templateKey ?? "未设模板"}）：${docLabel} / 语义实体 ${document.semanticEntityCount} 个 / 组别 ${groupLabel}${document.summary ? ` / ${document.summary}` : ""}${hintLabel}`;
+  }
+
+  private formatSourceSemanticHighlightLine(
+    document: WorkbenchSourceDocumentSemanticSummary,
+    highlight: WorkbenchSourceDocumentSemanticEntitySummary,
+  ): string {
+    const semanticContext = getAifictionPluginRegistry().getPreferredSourceDocumentSemanticContext();
+    if (semanticContext) {
+      try {
+        return semanticContext.formatHighlightLine({
+          document,
+          highlight,
+        });
+      } catch {
+        // Fallback to the legacy formatter when the plugin formatter fails.
+      }
+    }
+
+    const keywordLabel = highlight.keywords.length ? ` / 关键词：${highlight.keywords.slice(0, 4).join("、")}` : "";
+    const listItemLabel = highlight.listItems.length ? ` / 条目：${highlight.listItems.slice(0, 2).join("；")}` : "";
+    const evidenceLabel =
+      !highlight.summary && highlight.evidenceExcerpt ? ` / 证据：${highlight.evidenceExcerpt}` : "";
+    return `- [${document.title}] ${highlight.displayName}（${highlight.entityType} / ${highlight.semanticGroup}）：${highlight.summary ?? "待补摘要"}${keywordLabel}${listItemLabel}${evidenceLabel}`;
   }
 
   private writeContextPack(
@@ -2054,6 +2700,7 @@ export class WorkspaceProtocolService {
     book: BookProtocol,
   ): string {
     const normalizedGateCode = this.normalizeGateCode(gateCode);
+    const focusTask = this.readString(book.current_focus?.task_type);
 
     if (normalizedGateCode === "batch-review-required") {
       if (!artifactData.reviewRequired) {
@@ -2083,16 +2730,15 @@ export class WorkspaceProtocolService {
     }
 
     if (normalizedGateCode === "prewrite-plan-required") {
-      return ["planning", "replanning"].includes(this.readString(book.current_focus?.task_type) ?? "") ? "pending" : "passed";
+      return this.collectPrewriteProtocolBlockers(book, focusTask).length ? "pending" : "passed";
     }
 
     if (normalizedGateCode === "rhythm-plan-required") {
-      return ["planning", "replanning"].includes(this.readString(book.current_focus?.task_type) ?? "") ? "pending" : "passed";
+      return this.hasRhythmGateBlocker(book) ? "pending" : "passed";
     }
 
     if (normalizedGateCode === "volume-budget-check") {
-      const focusTask = this.readString(book.current_focus?.task_type) ?? "";
-      return focusTask.includes("replan") || focusTask.includes("budget") ? "pending" : "passed";
+      return this.hasVolumeBudgetGateBlocker(book) ? "pending" : "passed";
     }
 
     return "pending";
@@ -2104,6 +2750,7 @@ export class WorkspaceProtocolService {
     book: BookProtocol,
   ): string {
     const normalizedGateCode = this.normalizeGateCode(gateCode);
+    const focusTask = this.readString(book.current_focus?.task_type);
 
     if (normalizedGateCode === "batch-review-required") {
       return artifactData.reviewRequired
@@ -2134,15 +2781,22 @@ export class WorkspaceProtocolService {
     }
 
     if (normalizedGateCode === "prewrite-plan-required") {
-      return "Current focus is still planning-oriented, so正文 drafting should remain blocked until the plan gate passes.";
+      const blockers = this.collectPrewriteProtocolBlockers(book, focusTask);
+      return blockers.length
+        ? `Prewrite protocol is still blocked: ${blockers.join(" / ")}`
+        : "Prewrite protocol gates are fully satisfied.";
     }
 
     if (normalizedGateCode === "rhythm-plan-required") {
-      return "Rhythm and chapter-function mix should be settled before entering the next drafting batch.";
+      return this.hasRhythmGateBlocker(book)
+        ? "Rhythm plan is incomplete: chapter-function mix or transition/daily slots are not fully locked."
+        : "Rhythm plan is already locked for the current volume.";
     }
 
     if (normalizedGateCode === "volume-budget-check") {
-      return "Volume budget gate should stay active until projected volume words and chapter count are consistent.";
+      return this.hasVolumeBudgetGateBlocker(book)
+        ? "Volume budget still needs content-first sizing and budget alignment verification."
+        : "Volume budget is already aligned with the current chapter/word-count constraints.";
     }
 
     return "Gate status has been recorded but still needs an explicit resolution rule.";
@@ -2156,7 +2810,7 @@ export class WorkspaceProtocolService {
     const normalizedGateCode = this.normalizeGateCode(gateCode);
     const reviewRequired = this.readBoolean(book.knowledge_state?.current_batch_review_required);
     const reviewStatus = this.readString(book.knowledge_state?.current_batch_review_status);
-    const focusTask = this.readString(book.current_focus?.task_type) ?? "";
+    const focusTask = this.readString(book.current_focus?.task_type);
 
     if (normalizedGateCode === "batch-review-required") {
       if (!reviewRequired) {
@@ -2173,12 +2827,16 @@ export class WorkspaceProtocolService {
       return this.readString(book.knowledge_state?.opening_arc_status) === "completed" && (!reviewRequired || reviewStatus === "resolved") ? "passed" : "pending";
     }
 
-    if (normalizedGateCode === "prewrite-plan-required" || normalizedGateCode === "rhythm-plan-required") {
-      return ["planning", "replanning"].includes(focusTask) ? "pending" : "passed";
+    if (normalizedGateCode === "prewrite-plan-required") {
+      return this.collectPrewriteProtocolBlockers(book, focusTask).length ? "pending" : "passed";
+    }
+
+    if (normalizedGateCode === "rhythm-plan-required") {
+      return this.hasRhythmGateBlocker(book) ? "pending" : "passed";
     }
 
     if (normalizedGateCode === "volume-budget-check") {
-      return focusTask.includes("replan") || focusTask.includes("budget") ? "pending" : "passed";
+      return this.hasVolumeBudgetGateBlocker(book) ? "pending" : "passed";
     }
 
     if (normalizedGateCode === "meta-language-check" || normalizedGateCode === "continuity-review") {
@@ -2194,20 +2852,26 @@ export class WorkspaceProtocolService {
     book: BookProtocol,
   ): string {
     const normalizedGateCode = this.normalizeGateCode(gateCode);
-    const focusTask = this.readString(book.current_focus?.task_type) ?? "";
+    const focusTask = this.readString(book.current_focus?.task_type);
 
     if (normalizedGateCode === "batch-review-required") {
       return "Current gate status is inferred from book.yml because no persisted gate record exists yet.";
     }
-    if (normalizedGateCode === "prewrite-plan-required" || normalizedGateCode === "rhythm-plan-required") {
-      return ["planning", "replanning"].includes(focusTask)
-        ? "Current focus is still planning-oriented."
-        : "Current focus no longer indicates a planning block.";
+    if (normalizedGateCode === "prewrite-plan-required") {
+      const blockers = this.collectPrewriteProtocolBlockers(book, focusTask);
+      return blockers.length
+        ? `Prewrite gate is inferred as blocked: ${blockers.join(" / ")}`
+        : "Prewrite gate is inferred as passed from current protocol fields.";
+    }
+    if (normalizedGateCode === "rhythm-plan-required") {
+      return this.hasRhythmGateBlocker(book)
+        ? "Rhythm gate is inferred as blocked because rhythm fields are incomplete."
+        : "Rhythm gate is inferred as passed from current protocol fields.";
     }
     if (normalizedGateCode === "volume-budget-check") {
-      return focusTask.includes("replan") || focusTask.includes("budget")
-        ? "Current focus indicates a budget replan is still required."
-        : "No budget replan flag is currently active in focus state.";
+      return this.hasVolumeBudgetGateBlocker(book)
+        ? "Volume budget gate is inferred as blocked because content-first sizing or budget alignment is incomplete."
+        : "Volume budget gate is inferred as passed from current protocol fields.";
     }
     if (normalizedGateCode === "opening-arc-review") {
       return this.readString(book.knowledge_state?.opening_arc_status) === "completed"
@@ -2222,6 +2886,28 @@ export class WorkspaceProtocolService {
     return summary.enabledKnowledgeGates.includes(gateCode)
       ? "Current gate status is inferred from protocol state."
       : "No gate record exists for this code.";
+  }
+
+  private hasRhythmGateBlocker(book: BookProtocol): boolean {
+    return (
+      book.prewrite_gate?.current_chapter_function_mix_defined !== true ||
+      book.prewrite_gate?.current_transition_daily_slots_defined !== true
+    );
+  }
+
+  private hasVolumeBudgetGateBlocker(book: BookProtocol): boolean {
+    const volumeTarget = book.planning_budget?.volume_target;
+    const volumeTargetLocked =
+      [volumeTarget?.chapters_min, volumeTarget?.chapters_max, volumeTarget?.chars_min, volumeTarget?.chars_max].every(
+        (value) => typeof value === "number" && value > 0,
+      );
+
+    return (
+      book.prewrite_gate?.current_volume_sized_by_content_first !== true ||
+      book.prewrite_gate?.current_volume_budget_locked !== true ||
+      book.prewrite_gate?.current_budget_alignment_verified !== true ||
+      !volumeTargetLocked
+    );
   }
 
   private normalizeGateCode(gateCode: string): string {
@@ -2304,6 +2990,334 @@ export class WorkspaceProtocolService {
     return bundles[0];
   }
 
+  private buildSourceOfTruthProtocol(
+    sourceOfTruth: BookSourceOfTruthProtocol | undefined,
+    settingsDir: string,
+    outlineDir: string,
+  ): BookSourceOfTruthProtocol {
+    const fallbackPaths: Partial<Record<LegacySourceDocumentFieldKey, string>> = {
+      project_brief: `${settingsDir}/作品定位.md`,
+      world_settings: `${settingsDir}/世界设定.md`,
+      character_settings: `${settingsDir}/角色设定.md`,
+    };
+
+    const documents = this.buildSourceDocumentRegistry(sourceOfTruth, fallbackPaths, { settingsDir, outlineDir });
+    const findRegisteredPath = (docKind: string): string | undefined =>
+      documents.find((document) => document.doc_kind === docKind)?.relative_path;
+
+    return {
+      project_brief:
+        this.readString(sourceOfTruth?.project_brief) ??
+        findRegisteredPath("project-brief") ??
+        fallbackPaths.project_brief,
+      world_settings:
+        this.readString(sourceOfTruth?.world_settings) ??
+        findRegisteredPath("world-setting") ??
+        fallbackPaths.world_settings,
+      character_settings:
+        this.readString(sourceOfTruth?.character_settings) ??
+        findRegisteredPath("character-setting") ??
+        fallbackPaths.character_settings,
+      master_outline:
+        this.readString(sourceOfTruth?.master_outline) ?? findRegisteredPath("outline-master"),
+      active_volume_outline:
+        this.readString(sourceOfTruth?.active_volume_outline) ?? findRegisteredPath("outline-active-volume"),
+      documents,
+    };
+  }
+
+  private collectSourceOfTruthDocuments(sourceOfTruth: BookSourceOfTruthProtocol | undefined): BookSourceDocumentProtocol[] {
+    return this.buildSourceDocumentRegistry(sourceOfTruth, {
+      project_brief: this.readString(sourceOfTruth?.project_brief),
+      world_settings: this.readString(sourceOfTruth?.world_settings),
+      character_settings: this.readString(sourceOfTruth?.character_settings),
+      master_outline: this.readString(sourceOfTruth?.master_outline),
+      active_volume_outline: this.readString(sourceOfTruth?.active_volume_outline),
+    }, undefined);
+  }
+
+  private buildSourceDocumentRegistry(
+    sourceOfTruth: BookSourceOfTruthProtocol | undefined,
+    fallbackPaths: Partial<Record<LegacySourceDocumentFieldKey, string>>,
+    pathContext?: { settingsDir: string; outlineDir: string },
+  ): BookSourceDocumentProtocol[] {
+    ensureWorkspaceAifictionPluginsRegistered(this.workspaceRoot);
+    const remainingDocuments = [...this.normalizeSourceDocuments(sourceOfTruth?.documents)];
+    const documents: BookSourceDocumentProtocol[] = [];
+    const sourceDocumentDefinitions = getAifictionPluginRegistry().listSourceDocumentDefinitions();
+    const effectiveSourceDocumentDefinitions =
+      sourceDocumentDefinitions.length > 0
+        ? sourceDocumentDefinitions
+        : [
+            {
+              docKind: "project-brief",
+              templateKey: "project-brief",
+              scope: "project",
+              priority: 100,
+              legacyFieldKey: "project_brief" as const,
+              isSourceOfTruthDefault: true,
+              defaultSyncPolicy: "manual",
+              buildDefaultRelativePath: (context: { settingsDir: string }) => `${context.settingsDir}/作品定位.md`,
+            },
+            {
+              docKind: "world-setting",
+              templateKey: "world-setting",
+              scope: "world",
+              priority: 90,
+              legacyFieldKey: "world_settings" as const,
+              isSourceOfTruthDefault: true,
+              defaultSyncPolicy: "manual",
+              buildDefaultRelativePath: (context: { settingsDir: string }) => `${context.settingsDir}/世界设定.md`,
+            },
+            {
+              docKind: "character-setting",
+              templateKey: "character-setting",
+              scope: "character",
+              priority: 80,
+              legacyFieldKey: "character_settings" as const,
+              isSourceOfTruthDefault: true,
+              defaultSyncPolicy: "manual",
+              buildDefaultRelativePath: (context: { settingsDir: string }) => `${context.settingsDir}/角色设定.md`,
+            },
+            {
+              docKind: "organization-setting",
+              templateKey: "organization-ecology",
+              scope: "organization",
+              priority: 75,
+              isSourceOfTruthDefault: true,
+              defaultSyncPolicy: "manual",
+              buildDefaultRelativePath: (context: { settingsDir: string }) => `${context.settingsDir}/组织生态设定.md`,
+            },
+            {
+              docKind: "outline-master",
+              templateKey: "outline-master",
+              scope: "outline",
+              priority: 70,
+              legacyFieldKey: "master_outline" as const,
+              isSourceOfTruthDefault: false,
+              defaultSyncPolicy: "manual",
+              buildDefaultRelativePath: (context: { outlineDir: string }) => `${context.outlineDir}/全书大纲.md`,
+            },
+            {
+              docKind: "outline-active-volume",
+              templateKey: "outline-volume",
+              scope: "outline",
+              priority: 60,
+              legacyFieldKey: "active_volume_outline" as const,
+              isSourceOfTruthDefault: false,
+              defaultSyncPolicy: "manual",
+              buildDefaultRelativePath: (context: { outlineDir: string }) => `${context.outlineDir}/卷一大纲.md`,
+            },
+          ];
+
+    for (const definition of effectiveSourceDocumentDefinitions) {
+      const matchingIndex = remainingDocuments.findIndex((document) => document.doc_kind === definition.docKind);
+      const matchingDocument = matchingIndex >= 0 ? remainingDocuments.splice(matchingIndex, 1)[0] : undefined;
+      const legacyRelativePath = definition.legacyFieldKey ? this.readString(sourceOfTruth?.[definition.legacyFieldKey]) : undefined;
+      const defaultRelativePath =
+        definition.isSourceOfTruthDefault !== false && pathContext
+          ? definition.buildDefaultRelativePath?.(pathContext)
+          : undefined;
+      const relativePath =
+        matchingDocument?.relative_path ??
+        legacyRelativePath ??
+        defaultRelativePath ??
+        (definition.legacyFieldKey ? fallbackPaths[definition.legacyFieldKey] : undefined);
+      const normalizedDocument = this.normalizeSourceDocument({
+        doc_kind: definition.docKind,
+        template_key: matchingDocument?.template_key ?? definition.templateKey,
+        relative_path: relativePath,
+        scope: matchingDocument?.scope ?? definition.scope,
+        is_source_of_truth: matchingDocument?.is_source_of_truth ?? definition.isSourceOfTruthDefault ?? true,
+        priority: matchingDocument?.priority ?? definition.priority,
+        sync_policy: matchingDocument?.sync_policy ?? definition.defaultSyncPolicy ?? "manual",
+      });
+
+      if (normalizedDocument) {
+        documents.push(normalizedDocument);
+      }
+    }
+
+    for (const document of remainingDocuments) {
+      const hasDuplicate = documents.some(
+        (existingDocument) =>
+          existingDocument.doc_kind === document.doc_kind || existingDocument.relative_path === document.relative_path,
+      );
+      if (!hasDuplicate) {
+        documents.push(document);
+      }
+    }
+
+    return documents.sort((left, right) => {
+      const leftPriority = left.priority ?? 0;
+      const rightPriority = right.priority ?? 0;
+      if (leftPriority !== rightPriority) {
+        return rightPriority - leftPriority;
+      }
+      return (left.doc_kind ?? "").localeCompare(right.doc_kind ?? "");
+    });
+  }
+
+  private normalizeSourceDocuments(documents: BookSourceDocumentProtocol[] | undefined): BookSourceDocumentProtocol[] {
+    if (!Array.isArray(documents)) {
+      return [];
+    }
+
+    const uniqueDocuments = new Map<string, BookSourceDocumentProtocol>();
+    for (const document of documents) {
+      const normalizedDocument = this.normalizeSourceDocument(document);
+      if (!normalizedDocument) {
+        continue;
+      }
+
+      const dedupeKey = `${normalizedDocument.doc_kind ?? "unknown"}::${normalizedDocument.relative_path}`;
+      if (!uniqueDocuments.has(dedupeKey)) {
+        uniqueDocuments.set(dedupeKey, normalizedDocument);
+      }
+    }
+
+    return [...uniqueDocuments.values()];
+  }
+
+  private normalizeSourceDocument(
+    document: BookSourceDocumentProtocol | undefined,
+  ): BookSourceDocumentProtocol | undefined {
+    if (!document) {
+      return undefined;
+    }
+
+    const relativePath = this.readString(document.relative_path);
+    if (!relativePath) {
+      return undefined;
+    }
+
+    return {
+      doc_kind: this.readString(document.doc_kind) ?? "supporting-note",
+      template_key: this.readString(document.template_key),
+      relative_path: this.normalizeForYaml(relativePath),
+      scope: this.readString(document.scope),
+      is_source_of_truth: this.readBoolean(document.is_source_of_truth) ?? true,
+      priority: this.readNumber(document.priority),
+      sync_policy: this.readString(document.sync_policy) ?? "manual",
+    };
+  }
+
+  private resolveStarterProfile(
+    workspace: WorkspaceProtocol | undefined,
+    profileKey: string | undefined,
+  ): WorkspaceStarterProfileProtocol | undefined {
+    const effectiveStarters = this.resolveEffectiveStarterProfiles(workspace);
+    const normalizedProfileKey = this.readString(profileKey) ?? this.readString(effectiveStarters.default_profile_key);
+    if (!normalizedProfileKey) {
+      return undefined;
+    }
+
+    return effectiveStarters.profiles?.find((profile) => this.readString(profile.profile_key) === normalizedProfileKey);
+  }
+
+  private resolveEffectiveStarterProfiles(
+    workspace: WorkspaceProtocol | undefined,
+  ): WorkspaceBookStartersProtocol {
+    const registry = getAifictionPluginRegistry();
+    return mergeWorkspaceBookStarters({
+      registeredDefaultProfileKey:
+        registry.getPreferredDefaultStarterProfile()?.profile.profile_key ??
+        defaultWorkspaceBookStarters.default_profile_key,
+      registeredProfiles: registry.listStarterProfiles().map((item) => item.profile),
+      workspaceStarters: workspace?.book_starters,
+    });
+  }
+
+  private applyStarterProfileWorkspaceProtocolOverlays(
+    workspaceProtocol: WorkspaceProtocol,
+    summary: WorkProtocolSummary,
+    snapshot: WorkbenchProjectSnapshot,
+    starterProfile: WorkspaceStarterProfileProtocol,
+  ): WorkspaceProtocol {
+    const registry = getAifictionPluginRegistry();
+    const overlays = registry.listStarterProfileProtocolOverlays(starterProfile.profile_key ?? "");
+    let nextWorkspace = workspaceProtocol;
+
+    for (const overlay of overlays) {
+      const partial = overlay.buildWorkspaceProtocolOverlay?.({
+        summary,
+        snapshot,
+        starterProfile,
+        workspace: nextWorkspace,
+        book: summary.book,
+      });
+      if (partial) {
+        nextWorkspace = this.mergeProtocolOverlay(nextWorkspace, partial);
+      }
+    }
+
+    return nextWorkspace;
+  }
+
+  private applyStarterProfileBookProtocolOverlays(
+    bookProtocol: BookProtocol,
+    summary: WorkProtocolSummary,
+    snapshot: WorkbenchProjectSnapshot,
+    starterProfile: WorkspaceStarterProfileProtocol,
+  ): BookProtocol {
+    const registry = getAifictionPluginRegistry();
+    const overlays = registry.listStarterProfileProtocolOverlays(starterProfile.profile_key ?? "");
+    let nextBook = bookProtocol;
+
+    for (const overlay of overlays) {
+      const partial = overlay.buildBookProtocolOverlay?.({
+        summary,
+        snapshot,
+        starterProfile,
+        workspace: summary.workspace,
+        book: nextBook,
+      });
+      if (partial) {
+        nextBook = this.mergeProtocolOverlay(nextBook, partial);
+      }
+    }
+
+    return nextBook;
+  }
+
+  private mergeProtocolOverlay<T>(base: T, overlay: Partial<T>): T {
+    if (!this.isPlainObject(base) || !this.isPlainObject(overlay)) {
+      return (overlay as T) ?? base;
+    }
+
+    const result: Record<string, unknown> = {
+      ...(base as Record<string, unknown>),
+    };
+
+    for (const [key, value] of Object.entries(overlay as Record<string, unknown>)) {
+      if (typeof value === "undefined") {
+        continue;
+      }
+
+      const currentValue = result[key];
+      if (Array.isArray(value)) {
+        result[key] = [...value];
+        continue;
+      }
+
+      if (this.isPlainObject(value) && this.isPlainObject(currentValue)) {
+        result[key] = this.mergeProtocolOverlay(
+          currentValue as Record<string, unknown>,
+          value as Record<string, unknown>,
+        );
+        continue;
+      }
+
+      result[key] = value;
+    }
+
+    return result as T;
+  }
+
+  private isPlainObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+
   private resolveRelativeDirectory(bookRootPath: string, fullPath: string | undefined, fallback: string): string {
     if (!fullPath) {
       return fallback;
@@ -2364,6 +3378,3 @@ export class WorkspaceProtocolService {
     return Math.max(Math.ceil((activeChapter + 1) / normalizedBatchSize) * normalizedBatchSize, normalizedBatchSize);
   }
 }
-
-
-

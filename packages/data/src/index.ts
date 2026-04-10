@@ -9,3 +9,6 @@ export * from "./v2";
 export * from "./workbench";
 export * from "./sync";
 export * from "./protocol";
+export * from "./plugins";
+export * from "./preflight";
+export * from "./smoke-workspace";

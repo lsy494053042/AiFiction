@@ -3,7 +3,9 @@ import path from "node:path";
 
 import YAML from "yaml";
 
-import { resolveWorkspaceRoot } from "./client";
+import { closeSqliteClient, resolveWorkspaceRoot } from "./client";
+import { configureAifictionPlugins } from "./plugins";
+import { assertAifictionPreflight } from "./preflight";
 import { WorkspaceProtocolService, type WorkspaceProtocol } from "./protocol";
 import { SqliteKnowledgeMethodRepository } from "./repositories/v2";
 
@@ -25,6 +27,15 @@ function resolveSmokeSlug(): string | undefined {
 }
 
 async function main() {
+  assertAifictionPreflight({
+    commandLabel: "db:protocol-smoke",
+    mode: "workspace",
+  });
+  const pluginRuntime = configureAifictionPlugins({
+    source: "workspace",
+    workspaceRoot: resolveWorkspaceRoot(),
+    reset: true,
+  });
   const service = new WorkspaceProtocolService();
   const knowledgeMethodRepository = new SqliteKnowledgeMethodRepository();
   const slug = resolveSmokeSlug();
@@ -32,6 +43,19 @@ async function main() {
   if (!slug) {
     console.log("[AiFiction Protocol] No active book configured. Empty workspace smoke passed.");
     return;
+  }
+
+  if (pluginRuntime.hasBlockingIssues) {
+    throw new Error(
+      `Plugin runtime has blocking issues: ${pluginRuntime.records
+        .filter((record) => ["blocked", "error"].includes(record.status))
+        .map((record) => `${record.pluginId}:${record.reason ?? record.status}`)
+        .join(", ")}`,
+    );
+  }
+
+  if (!pluginRuntime.loadedPluginIds.includes("builtin.source-document-definitions")) {
+    throw new Error("Plugin runtime must load builtin.source-document-definitions before protocol smoke.");
   }
 
   const bootstrapped = await service.bootstrapWorkProtocolBySlug(slug);
@@ -188,7 +212,13 @@ async function main() {
     throw new Error("Batch review JSON artifact is missing root-cause-first prompt.");
   }
 
+  const openingArcStatus = summary.book?.knowledge_state?.opening_arc_status;
+  const focusTaskType = summary.book?.current_focus?.task_type ?? "";
+  const shouldExpectOpeningAnchoring =
+    openingArcStatus !== "completed" || focusTaskType.includes("opening") || focusTaskType.includes("replan");
+
   if (
+    shouldExpectOpeningAnchoring &&
     !batchReviewData.findings.some(
       (finding) =>
         typeof finding === "object" &&
@@ -275,6 +305,7 @@ async function main() {
 
   console.log(`[AiFiction Protocol] Slug: ${slug}`);
   console.log(`[AiFiction Protocol] Status: ${summary?.protocolStatus ?? "N/A"}`);
+  console.log(`[AiFiction Protocol] Plugins: ${pluginRuntime.loadedPluginIds.join(", ")}`);
   console.log(`[AiFiction Protocol] Workspace file: ${summary?.workspaceFilePath ?? "N/A"}`);
   console.log(`[AiFiction Protocol] Book file: ${summary?.bookFilePath ?? "N/A"}`);
   console.log(`[AiFiction Protocol] Context pack dir: ${summary?.contextPackDirectoryPath ?? "N/A"}`);
@@ -292,9 +323,12 @@ async function main() {
   console.log(`[AiFiction Protocol] Knowledge gates: ${knowledgeGates.length}`);
 }
 
-main().catch((error) => {
-  console.error("[AiFiction Protocol] Smoke failed.");
-  console.error(error);
-  process.exitCode = 1;
-});
-
+main()
+  .catch((error) => {
+    console.error("[AiFiction Protocol] Smoke failed.");
+    console.error(error);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await closeSqliteClient();
+  });

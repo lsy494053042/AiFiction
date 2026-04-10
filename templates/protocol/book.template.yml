@@ -1,9 +1,24 @@
-﻿book_id: your-book-id
+book_id: your-book-id
 title: 作品名
 genre: 题材
 platform: 目标平台
 stage: planning
 status: active
+
+publication:
+  target_platform: 目标平台
+  platform_notes:
+  target_platform_locked: false
+  total_target_word_count:
+  total_target_word_count_locked: false
+  stop_loss_word_count:
+  stop_loss_word_count_locked: false
+  chapter_target_word_count:
+    min: 2000
+    max: 2500
+    locked: true
+  daily_word_target:
+  update_cadence:
 
 evaluation_policy:
   use_workspace_stop_loss_rule: true
@@ -23,17 +38,41 @@ source_of_truth:
   project_brief: 00-设定/作品定位.md
   world_settings: 00-设定/世界设定.md
   character_settings: 00-设定/角色设定.md
-  master_outline: 01-大纲/全书大纲.md
-  active_volume_outline: 01-大纲/卷一大纲.md
-
+  documents:
+    - doc_kind: project-brief
+      template_key: project-brief
+      relative_path: 00-设定/作品定位.md
+      scope: project
+      is_source_of_truth: true
+      priority: 100
+      sync_policy: manual
+    - doc_kind: world-setting
+      template_key: world-setting
+      relative_path: 00-设定/世界设定.md
+      scope: world
+      is_source_of_truth: true
+      priority: 90
+      sync_policy: manual
+    - doc_kind: character-setting
+      template_key: character-setting
+      relative_path: 00-设定/角色设定.md
+      scope: character
+      is_source_of_truth: true
+      priority: 80
+      sync_policy: manual
 current_focus:
   task_type: planning
   task_label: 整卷先规划
-  goal: 先完成整卷功能、阶段事件、节奏配比，再开始正文
-  summary: 不再按“写几章补几章”的方式推进，正文只能建立在完整骨架之后。
-hard_constraints: []
+  goal: 先完成设定、试写10章验证、整卷功能、整卷章纲、阶段事件、节奏配比和卷体量校准，再正式开始正文落地
+  summary: 新书正式落地前先试写10章；试写过线后，再正式回填大纲、章纲和协议状态。
+
+hard_constraints:
+  - 每次开新卷后，必须先锁定整卷章纲，再切当前批次章纲，不允许回到“写几章、规划几章”的推进方式。
+  - 新书正式落地前，必须先试写10章；只有试写结果整体过线，才允许正式回填大纲、章纲与协议状态。
+  - 正文默认按10章一组输出；只有在连贯性风险过高、单组信息量过重或卷体量不适合时，才允许降到5章；整卷未完成，不进入下一卷。
 
 planning_budget:
+  sizing_method: content-first
   chapter_target_chars:
     min: 2000
     max: 2500
@@ -45,13 +84,33 @@ planning_budget:
   budget_gate:
     require_check_before_next_batch: true
     current_status: pending
+    blocking_reason:
+  batch_output:
+    preferred_group_size: 10
+    fallback_group_size: 5
+    allow_group_sizes:
+      - 10
+      - 5
+    require_finish_current_volume_before_next_volume: true
 
 prewrite_gate:
   require_full_volume_plan_before_drafting: true
+  require_trial_ten_chapters_before_formal_start: true
+  current_platform_locked: false
+  current_stop_loss_locked: false
+  current_total_target_locked: false
+  current_chapter_target_locked: true
+  current_trial_ten_chapters_complete: false
+  current_trial_ten_chapters_passed: false
   current_volume_plan_complete: false
   current_stage_map_complete: false
   current_chapter_function_mix_defined: false
   current_transition_daily_slots_defined: false
+  current_full_chapter_positioning_complete: false
+  current_batch_outline_complete: false
+  current_volume_sized_by_content_first: false
+  current_volume_budget_locked: false
+  current_budget_alignment_verified: false
   current_batch_ready_to_write: false
 
 rhythm_plan:
@@ -63,6 +122,9 @@ rhythm_plan:
     information: 10-15%
     payoff: 5-10%
   hard_rules:
+    - 每次开新卷先定整卷章纲，再切当前批次章纲。
+    - 正文默认按10章一组输出，只有风险过高时才降到5章。
+    - 当前卷没有完成之前，不允许跳去下一卷正文。
     - 强钩子次章必须先接，不允许直接跳到第二天。
     - 每个阶段至少保留一章关系章和一章日常/缓冲章。
     - 基础信息要早清楚，核心真相可以后置。
@@ -71,10 +133,17 @@ rhythm_plan:
 execution_controls:
   planning_first:
     required_prewrite_sequence:
+      - platform-lock
+      - stop-loss-lock
+      - total-word-target-lock
+      - chapter-word-target-lock
+      - trial-ten-chapter-validation
+      - volume-budget-content-first
       - full-volume-plan
       - stage-map
       - chapter-function-mix
       - transition-and-daily-slots
+      - full-volume-chapter-positioning
       - current-batch-outline
   verification_before_completion:
     require_evidence_before_mark_done: true
@@ -98,8 +167,8 @@ knowledge_state:
   active_global_profile: default-global
   active_book_profile: default-book
   current_batch_id:
-  current_batch_review_required: true
-  current_batch_review_status: pending
+  current_batch_review_required: false
+  current_batch_review_status: not-started
   opening_arc_status: pending
   next_required_review_at_chapter: 3
   enabled_rule_sets:
@@ -133,5 +202,3 @@ proposal_commit:
     - timeline-conflict
     - major-relationship-shift
     - rule-break
-
-

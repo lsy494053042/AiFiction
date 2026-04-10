@@ -14,6 +14,7 @@ import type {
 
 import type { RepositoryPageRequest } from "../contracts/repository-contracts";
 import { type SqliteClient, getSqliteClient } from "../client";
+import { ensureWorkspaceAifictionPluginsRegistered, getAifictionPluginRegistry } from "../plugins";
 import { SqliteNarrativeAssetRepository } from "../repositories/v2/narrative-asset.repository";
 import { SqliteProjectCatalogRepository } from "../repositories/v2/project-catalog.repository";
 import { readStringArray } from "../repositories/v2/repository-base";
@@ -37,6 +38,10 @@ import {
   type WorkbenchSourceDocumentContext,
 } from "./impact-analysis";
 import { buildWorkbenchActionPlan, type WorkbenchActionPlan } from "./action-dispatch";
+
+const sourceSemanticPanelTemplateId = "system:source-document-semantics";
+const sourceSemanticGroupTaxonomyId = "system:taxonomy:source-semantic-group";
+const sourceSemanticConfidenceTaxonomyId = "system:taxonomy:source-semantic-confidence";
 
 export interface WorkbenchProjectStats {
   volumeCount: number;
@@ -71,6 +76,36 @@ export interface WorkbenchGenericEntitySummary {
   edgeCount: number;
   panelValueCount: number;
   tagCount: number;
+}
+
+export interface WorkbenchSourceDocumentSemanticEntitySummary {
+  entityId: string;
+  entityType: string;
+  displayName: string;
+  summary?: string;
+  semanticKey: string;
+  semanticGroup: string;
+  confidenceLevel?: string;
+  extractionMode?: string;
+  sectionTitle?: string;
+  evidenceExcerpt?: string;
+  edgeCount: number;
+  listItems: string[];
+  keywords: string[];
+}
+
+export interface WorkbenchSourceDocumentSemanticSummary {
+  sourceDocumentId?: string;
+  relativePath?: string;
+  docKind?: string;
+  templateKey?: string;
+  scope?: string;
+  title: string;
+  summary?: string;
+  semanticEntityCount: number;
+  semanticGroups: string[];
+  reviewHints: string[];
+  highlights: WorkbenchSourceDocumentSemanticEntitySummary[];
 }
 
 export interface WorkbenchTaskTemplateSummary {
@@ -278,6 +313,7 @@ export interface WorkbenchProjectSnapshot {
   volumes: VolumeOutline[];
   characters: CharacterCard[];
   genericEntities: WorkbenchGenericEntitySummary[];
+  sourceDocumentSemantics: WorkbenchSourceDocumentSemanticSummary[];
   tagTaxonomies: WorkbenchTagTaxonomySummary[];
   taskTemplates: WorkbenchTaskTemplateSummary[];
   chapters: ChapterCard[];
@@ -316,6 +352,15 @@ export interface WorkbenchDocumentWorkspace {
   emptyMessage: string;
 }
 
+export interface WorkbenchSemanticProjectionCandidate extends WorkbenchSourceDocumentSemanticEntitySummary {
+  sourceDocumentId?: string;
+  relativePath?: string;
+  docKind?: string;
+  templateKey?: string;
+  scope?: string;
+  reviewHints: string[];
+}
+
 export class NovelWorkbenchService {
   private readonly projectCatalogRepository: SqliteProjectCatalogRepository;
   private readonly narrativeAssetRepository: SqliteNarrativeAssetRepository;
@@ -324,6 +369,7 @@ export class NovelWorkbenchService {
   private readonly syncWorkflowRepository: SqliteSyncWorkflowRepository;
 
   constructor(private readonly client: SqliteClient = getSqliteClient()) {
+    ensureWorkspaceAifictionPluginsRegistered();
     this.projectCatalogRepository = new SqliteProjectCatalogRepository(client);
     this.narrativeAssetRepository = new SqliteNarrativeAssetRepository(client);
     this.genericEntityWorkbenchService = new GenericEntityWorkbenchService(client);
@@ -395,6 +441,11 @@ export class NovelWorkbenchService {
     const relationSourceRefs = this.createSourceRefIndex(
       sourceRefs.filter((sourceRef) => sourceRef.assetType === "character-relationship"),
     );
+    const semanticSourceRefByAssetId = new Map(
+      sourceRefs
+        .filter((sourceRef) => sourceRef.referenceKind === "semantic-entity-projection")
+        .map((sourceRef) => [sourceRef.assetId, sourceRef] as const),
+    );
     const sourceRefsByDocumentId = this.createSourceDocumentSourceRefIndex(sourceRefs);
     const assetUpdatesByDocumentId = this.createAssetUpdateIndex(assetUpdates);
     const graph = this.buildCharacterGraph(characters, relationSourceRefs, sourceDocumentById);
@@ -432,21 +483,35 @@ export class NovelWorkbenchService {
     const fileSourceSummaries = fileSources.map((fileSource) =>
       this.createFileSourceSummary(fileSource, sourceDocumentsByFileSource.get(fileSource.id) ?? [], reviewRows),
     );
-    const genericEntitySummaries = await Promise.all(
+    const genericEntityDetails = await Promise.all(
       genericEntities.map(async (entity) => {
         const bundle = await this.genericEntityWorkbenchService.getEntityBundle(entity.id);
         return {
-          entityId: entity.id,
-          entityType: entity.entityType,
-          canonicalName: entity.canonicalName,
-          displayName: entity.displayName,
-          summary: entity.summary ?? undefined,
-          edgeCount: bundle?.edges.length ?? 0,
-          panelValueCount: bundle?.panelValues.length ?? 0,
-          tagCount: bundle?.tags.length ?? 0,
-        } satisfies WorkbenchGenericEntitySummary;
+          summary: {
+            entityId: entity.id,
+            entityType: entity.entityType,
+            canonicalName: entity.canonicalName,
+            displayName: entity.displayName,
+            summary: entity.summary ?? undefined,
+            edgeCount: bundle?.edges.length ?? 0,
+            panelValueCount: bundle?.panelValues.length ?? 0,
+            tagCount: bundle?.tags.length ?? 0,
+          } satisfies WorkbenchGenericEntitySummary,
+          semanticProjection: bundle
+            ? this.extractSourceDocumentSemanticProjection(
+                bundle,
+                semanticSourceRefByAssetId.get(entity.id),
+                sourceDocumentById,
+              )
+            : null,
+        };
       }),
     );
+    const genericEntitySummaries = genericEntityDetails.map((detail) => detail.summary);
+    const sourceDocumentSemanticCandidates = genericEntityDetails
+      .map((detail) => detail.semanticProjection)
+      .filter((projection): projection is WorkbenchSemanticProjectionCandidate => Boolean(projection));
+    const sourceDocumentSemantics = this.buildSourceDocumentSemanticSummaries(sourceDocumentSemanticCandidates);
     const taskTemplateSummaries = await Promise.all(
       taskTemplates.map(async (template) => {
         const bundle = await this.genericEntityWorkbenchService.getTaskBundle(template.id);
@@ -497,6 +562,7 @@ export class NovelWorkbenchService {
       volumes,
       characters,
       genericEntities: genericEntitySummaries,
+      sourceDocumentSemantics,
       tagTaxonomies,
       taskTemplates: taskTemplateSummaries,
       chapters,
@@ -511,6 +577,282 @@ export class NovelWorkbenchService {
       pendingReviews,
       reviewStats,
     };
+  }
+
+  private extractSourceDocumentSemanticProjection(
+    bundle: NonNullable<Awaited<ReturnType<GenericEntityWorkbenchService["getEntityBundle"]>>>,
+    semanticSourceRef: SyncSourceRefRecord | undefined,
+    sourceDocumentById: Map<string, WorkbenchSourceDocumentIndex>,
+  ): WorkbenchSemanticProjectionCandidate | null {
+    const semanticPanelValues = bundle.panelValues.filter((panelValue) => panelValue.templateId === sourceSemanticPanelTemplateId);
+    if (!semanticPanelValues.length && !semanticSourceRef) {
+      return null;
+    }
+
+    const sourceDocumentId = this.readSemanticPanelText(semanticPanelValues, "source_document_id") ?? semanticSourceRef?.sourceDocumentId;
+    const semanticKey =
+      this.readSemanticPanelText(semanticPanelValues, "semantic_key") ?? this.extractSemanticKeyFromLocator(semanticSourceRef?.locator);
+    const semanticGroup =
+      this.readSemanticPanelText(semanticPanelValues, "semantic_group") ??
+      bundle.tags.find((tag) => tag.taxonomyId === sourceSemanticGroupTaxonomyId)?.tagCode;
+    if (!sourceDocumentId || !semanticKey || !semanticGroup) {
+      return null;
+    }
+
+    const sourceDocument = sourceDocumentById.get(sourceDocumentId);
+
+    return {
+      entityId: bundle.entity.id,
+      entityType: bundle.entity.entityType,
+      displayName: bundle.entity.displayName,
+      summary: bundle.entity.summary ?? undefined,
+      semanticKey,
+      semanticGroup,
+      confidenceLevel:
+        this.readSemanticPanelText(semanticPanelValues, "confidence_level") ??
+        bundle.tags.find((tag) => tag.taxonomyId === sourceSemanticConfidenceTaxonomyId)?.tagCode,
+      extractionMode: this.readSemanticPanelText(semanticPanelValues, "extraction_mode") ?? "template",
+      sectionTitle: this.readSemanticPanelText(semanticPanelValues, "section_title"),
+      evidenceExcerpt: this.readSemanticPanelText(semanticPanelValues, "evidence_excerpt") ?? semanticSourceRef?.evidenceQuote ?? undefined,
+      edgeCount: bundle.edges.length,
+      listItems: this.readSemanticPanelStringArray(semanticPanelValues, "list_items"),
+      keywords: this.readSemanticPanelStringArray(semanticPanelValues, "keywords"),
+      sourceDocumentId,
+      relativePath:
+        this.readSemanticPanelText(semanticPanelValues, "relative_path") ??
+        sourceDocument?.relativePath ??
+        semanticSourceRef?.locator?.split("#semantic:")[0],
+      docKind: this.readSemanticPanelText(semanticPanelValues, "doc_kind") ?? sourceDocument?.documentKind,
+      templateKey:
+        this.readSemanticPanelText(semanticPanelValues, "template_key") ??
+        this.inferTemplateKeyFromDocumentKind(sourceDocument?.documentKind),
+      scope: this.readSemanticPanelText(semanticPanelValues, "scope") ?? this.inferScopeFromDocumentKind(sourceDocument?.documentKind),
+      reviewHints: this.readSemanticPanelStringArray(semanticPanelValues, "review_hints"),
+    };
+  }
+
+  private buildSourceDocumentSemanticSummaries(
+    candidates: WorkbenchSemanticProjectionCandidate[],
+  ): WorkbenchSourceDocumentSemanticSummary[] {
+    const projectionRegistration = getAifictionPluginRegistry().getPreferredSourceDocumentSemanticProjection();
+    if (projectionRegistration) {
+      try {
+        return projectionRegistration.buildSummaries(candidates);
+      } catch {
+        // Fallback to the legacy in-service summarizer when plugin projection fails.
+      }
+    }
+
+    const groups = new Map<string, WorkbenchSemanticProjectionCandidate[]>();
+    for (const candidate of candidates) {
+      const groupKey = candidate.sourceDocumentId ?? candidate.relativePath ?? candidate.entityId;
+      const existing = groups.get(groupKey);
+      if (existing) {
+        existing.push(candidate);
+        continue;
+      }
+
+      groups.set(groupKey, [candidate]);
+    }
+
+    return Array.from(groups.values())
+      .map((group) => {
+        const sortedGroup = [...group].sort((left, right) => this.compareSemanticCandidates(left, right));
+        const root = sortedGroup.find((candidate) => candidate.semanticKey === "root") ?? sortedGroup[0];
+        const semanticGroups = Array.from(new Set(sortedGroup.map((candidate) => candidate.semanticGroup))).sort((left, right) =>
+          left.localeCompare(right, "zh-CN"),
+        );
+        const highlights = sortedGroup
+          .filter((candidate) => candidate.semanticKey !== "root")
+          .slice(0, 6)
+          .map((candidate) => this.toSourceDocumentSemanticEntitySummary(candidate));
+
+        return {
+          sourceDocumentId: root.sourceDocumentId,
+          relativePath: root.relativePath,
+          docKind: root.docKind,
+          templateKey: root.templateKey,
+          scope: root.scope,
+          title: root.displayName,
+          summary: root.summary,
+          semanticEntityCount: sortedGroup.length,
+          semanticGroups,
+          reviewHints: root.reviewHints,
+          highlights,
+        } satisfies WorkbenchSourceDocumentSemanticSummary;
+      })
+      .sort((left, right) => this.compareSemanticDocuments(left, right));
+  }
+
+  private toSourceDocumentSemanticEntitySummary(
+    candidate: WorkbenchSemanticProjectionCandidate,
+  ): WorkbenchSourceDocumentSemanticEntitySummary {
+    return {
+      entityId: candidate.entityId,
+      entityType: candidate.entityType,
+      displayName: candidate.displayName,
+      summary: candidate.summary,
+      semanticKey: candidate.semanticKey,
+      semanticGroup: candidate.semanticGroup,
+      confidenceLevel: candidate.confidenceLevel,
+      extractionMode: candidate.extractionMode,
+      sectionTitle: candidate.sectionTitle,
+      evidenceExcerpt: candidate.evidenceExcerpt,
+      edgeCount: candidate.edgeCount,
+      listItems: candidate.listItems,
+      keywords: candidate.keywords,
+    };
+  }
+
+  private compareSemanticCandidates(
+    left: WorkbenchSemanticProjectionCandidate,
+    right: WorkbenchSemanticProjectionCandidate,
+  ): number {
+    if (left.semanticKey === "root" && right.semanticKey !== "root") {
+      return -1;
+    }
+
+    if (left.semanticKey !== "root" && right.semanticKey === "root") {
+      return 1;
+    }
+
+    const confidenceDelta =
+      this.semanticConfidenceRank(right.confidenceLevel) - this.semanticConfidenceRank(left.confidenceLevel);
+    if (confidenceDelta !== 0) {
+      return confidenceDelta;
+    }
+
+    const edgeDelta = right.edgeCount - left.edgeCount;
+    if (edgeDelta !== 0) {
+      return edgeDelta;
+    }
+
+    const keywordDelta = right.keywords.length - left.keywords.length;
+    if (keywordDelta !== 0) {
+      return keywordDelta;
+    }
+
+    return left.displayName.localeCompare(right.displayName, "zh-CN");
+  }
+
+  private compareSemanticDocuments(
+    left: WorkbenchSourceDocumentSemanticSummary,
+    right: WorkbenchSourceDocumentSemanticSummary,
+  ): number {
+    const rankDelta = this.semanticDocumentRank(left) - this.semanticDocumentRank(right);
+    if (rankDelta !== 0) {
+      return rankDelta;
+    }
+
+    return (left.relativePath ?? left.title).localeCompare(right.relativePath ?? right.title, "zh-CN");
+  }
+
+  private semanticDocumentRank(summary: WorkbenchSourceDocumentSemanticSummary): number {
+    const templateKey = (summary.templateKey ?? "").trim();
+    switch (templateKey) {
+      case "project-brief":
+        return 1;
+      case "world-setting":
+        return 2;
+      case "organization-ecology":
+        return 3;
+      case "character-setting":
+        return 4;
+      default:
+        return 10;
+    }
+  }
+
+  private semanticConfidenceRank(confidenceLevel?: string): number {
+    switch (confidenceLevel) {
+      case "medium":
+        return 2;
+      case "low":
+        return 1;
+      default:
+        return 0;
+    }
+  }
+
+  private readSemanticPanelText(
+    panelValues: NonNullable<Awaited<ReturnType<GenericEntityWorkbenchService["getEntityBundle"]>>>["panelValues"],
+    fieldKey: string,
+  ): string | undefined {
+    const value = panelValues.find((panelValue) => this.extractSemanticFieldKey(panelValue.fieldId) === fieldKey);
+    return value?.valueText ?? undefined;
+  }
+
+  private readSemanticPanelStringArray(
+    panelValues: NonNullable<Awaited<ReturnType<GenericEntityWorkbenchService["getEntityBundle"]>>>["panelValues"],
+    fieldKey: string,
+  ): string[] {
+    const value = panelValues.find((panelValue) => this.extractSemanticFieldKey(panelValue.fieldId) === fieldKey);
+    if (!Array.isArray(value?.valueJson)) {
+      return [];
+    }
+
+    return value.valueJson.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  }
+
+  private extractSemanticFieldKey(fieldId: string): string {
+    const marker = ":field:";
+    const offset = fieldId.indexOf(marker);
+    if (offset < 0) {
+      return fieldId;
+    }
+
+    return fieldId.slice(offset + marker.length);
+  }
+
+  private extractSemanticKeyFromLocator(locator?: string): string | undefined {
+    if (!locator) {
+      return undefined;
+    }
+
+    const marker = "#semantic:";
+    const offset = locator.indexOf(marker);
+    if (offset < 0) {
+      return undefined;
+    }
+
+    return locator.slice(offset + marker.length).trim() || undefined;
+  }
+
+  private inferTemplateKeyFromDocumentKind(documentKind?: string): string | undefined {
+    switch (documentKind) {
+      case "project-brief":
+        return "project-brief";
+      case "world-setting":
+        return "world-setting";
+      case "organization-setting":
+        return "organization-ecology";
+      case "character-setting":
+        return "character-setting";
+      case "outline-master":
+        return "outline-master";
+      case "outline-active-volume":
+        return "outline-volume";
+      default:
+        return undefined;
+    }
+  }
+
+  private inferScopeFromDocumentKind(documentKind?: string): string | undefined {
+    switch (documentKind) {
+      case "project-brief":
+        return "project";
+      case "world-setting":
+        return "world";
+      case "organization-setting":
+        return "organization";
+      case "character-setting":
+        return "character";
+      case "outline-master":
+      case "outline-active-volume":
+        return "outline";
+      default:
+        return undefined;
+    }
   }
 
   async getProjectDocumentWorkspaceBySlug(

@@ -12,7 +12,18 @@
     "db:sync-smoke": "tsx src/v2-sync-smoke.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:workbench-smoke": "tsx src/workbench-smoke.ts",
-    "db:protocol-smoke": "tsx src/protocol-smoke.ts"
+    "db:protocol-smoke": "tsx src/protocol-smoke.ts",
+    "plugins:manage": "tsx src/plugins-cli.ts",
+    "plugins:smoke": "tsx src/plugin-smoke.ts",
+    "plugins:matrix:smoke": "tsx src/plugin-runtime-matrix-smoke.ts",
+    "migration:compat:smoke": "tsx src/migration-compat-smoke.ts",
+    "quickstart": "tsx src/quickstart.ts",
+    "quickstart:smoke": "tsx src/quickstart-smoke.ts",
+    "workspace:init": "tsx src/init-workspace.ts",
+    "workspace:init:smoke": "tsx src/init-workspace-smoke.ts",
+    "starter:matrix:smoke": "tsx src/starter-profile-matrix-smoke.ts",
+    "books:init": "tsx src/init-book.ts",
+    "books:init:smoke": "tsx src/init-book-smoke.ts"
   },
   "dependencies": {
     "@aifiction/schemas": "0.1.0",

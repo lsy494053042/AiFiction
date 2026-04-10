@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { createClient, type Client } from "@libsql/client";
 import { drizzle, type LibSQLDatabase } from "drizzle-orm/libsql";
@@ -134,4 +135,16 @@ export function getSqliteClient(customPath?: string): SqliteClient {
   }
 
   return cachedClient;
+}
+
+export async function closeSqliteClient(): Promise<void> {
+  if (!cachedClient) {
+    return;
+  }
+
+  const client = cachedClient;
+  cachedClient = null;
+  await Promise.resolve(client.sqlite.close());
+  // Give Windows a brief settle window so temp smoke workspaces can release file handles.
+  await delay(150);
 }

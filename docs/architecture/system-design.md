@@ -1,6 +1,6 @@
 # AiFiction 系统设计与数据库冻结清单
 
-最后更新：2026-04-04
+最后更新：2026-04-08
 
 ## 1. 这份文档的定位
 
@@ -16,6 +16,10 @@
 - 治理、修复、回滚、降级、验收线
 
 除非出现跨题材、跨作品的真实新需求，否则不再反复讨论核心架构。
+
+配套文档：
+
+- [默认架构收口方案](./default-architecture-convergence.md)
 
 ## 2. 项目定位
 
@@ -186,6 +190,56 @@ AiFiction 不是某一本小说的定制数据库，也不是单纯的网页工�
 - 元语言检查：`npm.cmd run writing:meta-check -- --dir ... --from ... --to ...`
 - 字数预算检查：`npm.cmd run writing:budget-check -- --book-root books/作品名`
 
+### 5.7 核心文档治理与执行规则（2026-04-08）
+
+项目级核心文档不是 3 份，而是固定的 4 + 1 份，协议文档另算：
+
+1. [README.md](/f:/AiFiction/README.md)
+2. [workbench-operations-manual.md](/f:/AiFiction/docs/operations/workbench-operations-manual.md)
+3. [system-design.md](/f:/AiFiction/docs/architecture/system-design.md)
+4. [project-progress.md](/f:/AiFiction/docs/project/project-progress.md)
+5. [default-architecture-convergence.md](/f:/AiFiction/docs/architecture/default-architecture-convergence.md)
+
+它们的职责固定如下：
+
+- [README.md](/f:/AiFiction/README.md)
+  保存项目入口、总览、目录结构、默认工作流与常用命令。
+- [workbench-operations-manual.md](/f:/AiFiction/docs/operations/workbench-operations-manual.md)
+  保存面向实际使用的操作说明与推荐流程。
+- [system-design.md](/f:/AiFiction/docs/architecture/system-design.md)
+  保存主架构边界、稳定对象、总原则与最终裁决口径。
+- [project-progress.md](/f:/AiFiction/docs/project/project-progress.md)
+  保存当前主线、当前阶段、阶段状态、下一步与最近完成记录。
+- [default-architecture-convergence.md](/f:/AiFiction/docs/architecture/default-architecture-convergence.md)
+  保存默认入口收口方向、完全插件化阶段路线、验收标准与完成后的能力边界。
+
+协议文档单独计算，不并入核心文档集合：
+
+- [workspace.yml](/f:/AiFiction/workspace.yml)
+- `books/<作品>/book.yml`
+
+补充说明：
+
+- [writing-knowledge-system.md](/f:/AiFiction/docs/architecture/writing-knowledge-system.md) 目前只保留说明页，内容已经并入主文档，不再算独立核心文档。
+- “核心文档”指项目级固定读物；“协议文档”指运行时状态；“作品文档”指具体作品真相源。
+
+新窗口的默认读取顺序固定如下：
+
+1. 先读 [README.md](/f:/AiFiction/README.md)。
+2. 再读 [workbench-operations-manual.md](/f:/AiFiction/docs/operations/workbench-operations-manual.md)。
+3. 再读 [system-design.md](/f:/AiFiction/docs/architecture/system-design.md)。
+4. 再读 [project-progress.md](/f:/AiFiction/docs/project/project-progress.md)。
+5. 再读 [default-architecture-convergence.md](/f:/AiFiction/docs/architecture/default-architecture-convergence.md)。
+6. 然后再读当前 [workspace.yml](/f:/AiFiction/workspace.yml) 与当前作品 `book.yml`。
+7. 最后按任务读取当前作品的设定、大纲、正文与运行产物。
+
+从现在开始：
+
+- 聊天结论不能长期充当真相源。
+- 运行时产物不能反向决定主架构。
+- 单本书问题不能直接反推核心 schema。
+- 核心文档之间一旦出现旧示例、旧流程、乱码或口径冲突，优先直接修正文档本体，不再额外新增补丁文档。
+
 ## 6. 核心稳定对象
 
 以下对象属于核心边界，后续尽量稳定，不因单本书而改。
@@ -201,6 +255,7 @@ AiFiction 不是某一本小说的定制数据库，也不是单纯的网页工�
 - `entity_snapshot`
 - `entity_state_event`
 - `source_ref`
+- `source_document`
 - `knowledge_batch`
 - `knowledge_finding`
 - `knowledge_item`
@@ -208,6 +263,30 @@ AiFiction 不是某一本小说的定制数据库，也不是单纯的网页工�
 - `knowledge_profile_rule`
 - `knowledge_application`
 - `knowledge_gate`
+
+### 6.1 默认入口收口补充（2026-04-08）
+
+当前主文档已经明确了通用实体、面板扩展、来源链与投影视图方向，但默认入口仍然没有完全收口。
+
+目前的真实缺口是：
+
+- 默认入口仍然偏固定 `source_of_truth` 槽位。
+- 默认同步入口仍然偏“章节 + 大纲”。
+- 默认写回仍然偏固定资产。
+- 普通用户开新书时，仍然容易感受到“换题材就要担心数据层”。
+
+从现在开始，主架构补充以下默认原则：
+
+1. 文档入口逐步从固定槽位转向可注册文档集合。
+2. 新增结构化事实默认优先落通用实体层，而不是优先落强类型专表。
+3. `character / volume / chapter / world_rule` 继续保留，但定义为投影与兼容层。
+4. 题材差异优先通过模板注册、面板字段、标签和任务规则承接，不优先通过改主表承接。
+5. 系统必须支持未知类型回退，保证新设定最差也能以候选或通用实体方式落地。
+6. 上下文包按任务类型组装，而不是默认只按最近章节和最近角色组装。
+
+详细收口方案见：
+
+- [AiFiction 默认架构收口方案](./default-architecture-convergence.md)
 
 原则：
 
@@ -842,3 +921,22 @@ V1 明确不要求：
 4. 已明确哪些需求以后走扩展机制，不再走核心重构
 
 只要满足这 4 条，就进入实现阶段，不再继续补充架构讨论。
+
+## 2026-04-09 Hard Preflight
+
+Default entrypoints are now blocked by programmatic preflight instead of relying on chat memory.
+
+Bound entrypoints:
+- quickstart
+- workspace:init
+- books:init
+- plugins:manage
+- db:register-from-protocol
+- db:protocol-smoke
+- apps/worker/src/sync-runner.ts
+
+Checks:
+1. The fixed 4 + 1 core docs must exist.
+2. Non-bootstrap commands must see workspace.yml.
+3. Book-mode commands must resolve the target book.yml.
+4. docs/project/project-progress.md must keep the backlog section after close-out.

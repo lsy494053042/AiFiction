@@ -1,0 +1,219 @@
+book_id: hui-wu-gu-yuan
+title: 灰雾雇员
+starter_profile_key: qidian-male-longform
+genre: 都市异常 / 克系渗透 / 幕后经营 / 组织群像
+platform: 起点中文网（男频）
+stage: drafting
+status: active
+active_volume: 1
+active_chapter: 26
+paths:
+  root_dir: .
+  settings_dir: 00-设定
+  outlines_dir: 01-大纲
+  chapters_dir: 02-正文
+  artifacts_dir: 03-中间产物
+source_of_truth:
+  project_brief: 00-设定/作品定位.md
+  world_settings: 00-设定/世界设定.md
+  character_settings: 00-设定/角色设定.md
+  master_outline: 01-大纲/全书大纲.md
+  active_volume_outline: 01-大纲/卷一大纲.md
+  documents:
+    - doc_kind: project-brief
+      template_key: project-brief
+      relative_path: 00-设定/作品定位.md
+      scope: project
+      is_source_of_truth: true
+      priority: 100
+      sync_policy: manual
+    - doc_kind: world-setting
+      template_key: world-setting
+      relative_path: 00-设定/世界设定.md
+      scope: world
+      is_source_of_truth: true
+      priority: 90
+      sync_policy: manual
+    - doc_kind: character-setting
+      template_key: character-setting
+      relative_path: 00-设定/角色设定.md
+      scope: character
+      is_source_of_truth: true
+      priority: 80
+      sync_policy: manual
+    - doc_kind: organization-setting
+      template_key: organization-ecology
+      relative_path: 00-设定/组织生态设定.md
+      scope: organization
+      is_source_of_truth: true
+      priority: 75
+      sync_policy: manual
+    - doc_kind: outline-master
+      template_key: outline-master
+      relative_path: 01-大纲/全书大纲.md
+      scope: outline
+      is_source_of_truth: true
+      priority: 70
+      sync_policy: manual
+    - doc_kind: outline-active-volume
+      template_key: outline-volume
+      relative_path: 01-大纲/卷一大纲.md
+      scope: outline
+      is_source_of_truth: true
+      priority: 60
+      sync_policy: manual
+current_focus:
+  task_type: volume-one-complete-review
+  task_label: 卷一正文已完成，等待整卷复核
+  goal: 复核0001至0026的整卷效果，并在确认后进入卷二准备与第03组之后的正式推进。
+  summary: 当前书已完成卷一正文0001至0026；下一步先做整卷复核，确认卷一收口、人物声线与卷末兑现点都站住，再进入卷二。
+publication:
+  target_platform: 起点中文网（男频）
+  platform_notes: 已正式锁定为起点中文网（男频），后续正文、节奏与止损线按该平台口径执行。
+  target_platform_locked: true
+  total_target_word_count: 1000000
+  total_target_word_count_locked: true
+  stop_loss_word_count: 250000
+  stop_loss_word_count_locked: true
+  chapter_target_word_count:
+    min: 2000
+    max: 2500
+    locked: true
+  daily_word_target: 2000
+  update_cadence: 日更
+evaluation_policy:
+  use_workspace_stop_loss_rule: false
+  override_stop_loss_word_count: 250000
+hard_constraints:
+  - 主角的功能是中枢、调度、结算和修复，不是常规一线战斗员。
+  - 主角不长期亲自下场的核心原因，是组织必须把个人能力转成体系能力，而不是让老板永久兼职前线。
+  - 本书主驱动力是异常处理、主神空间修复、组织生态建立与对抗污染，不是宫斗、权谋或势力争霸。
+  - 大型组织不仅意味着规模感，还意味着金字塔结构、普通支撑岗位、内部交易体系和小社会生态。
+  - AI 以被动交互为主，实时支援尽量伪装成员工协同。
+  - 招募对象必须是有门槛的本地原住民精英，不是普通路人。
+  - 前期异常规模保持克制，以微型异常节点、调查、回收和局部清剿为主。
+  - 单章目标字数固定为 2000 至 2500 字。
+  - 全书目标字数暂定 100 万字，止损线 25 万字。
+  - 组织最终目标是建立人类一侧的异常处理秩序，而不是单纯做大做强。
+  - 分卷必须先按内容职责单元划分，再校准字数，最后才落章数。
+  - 每次开新卷后，必须先锁定整卷章纲，再切当前批次章纲，不允许回到“写几章、规划几章”的推进方式。
+  - 新书正式落地前，必须先试写10章；只有试写结果整体过线，才允许正式回填大纲、章纲与协议状态。
+  - 正文默认按10章一组输出；只有在连贯性风险过高、单组信息量过重或卷体量不适合时，才允许降到5章；整卷未完成，不进入下一卷。
+  - 正文不能直接套通用模板，必须服从《灰雾雇员》专属写作卡。
+  - 当前第01组旧稿已判无效，不允许在旧稿上直接续写。
+planning_budget:
+  sizing_method: content-first
+  chapter_target_chars:
+    min: 2000
+    max: 2500
+  volume_target:
+    chapters_min: 26
+    chapters_max: 26
+    chars_min: 52000
+    chars_max: 65000
+  budget_gate:
+    require_check_before_next_batch: true
+    current_status: review-pending
+    blocking_reason: 卷一正文已完成，当前先做整卷复核；复核通过后再进入卷二规划与下一组正文。
+prewrite_gate:
+  require_full_volume_plan_before_drafting: true
+  require_trial_ten_chapters_before_formal_start: true
+  current_platform_locked: true
+  current_stop_loss_locked: true
+  current_total_target_locked: true
+  current_chapter_target_locked: true
+  current_trial_ten_chapters_complete: true
+  current_trial_ten_chapters_passed: true
+  current_volume_plan_complete: true
+  current_stage_map_complete: true
+  current_chapter_function_mix_defined: true
+  current_transition_daily_slots_defined: true
+  current_full_chapter_positioning_complete: true
+  current_batch_outline_complete: true
+  current_volume_sized_by_content_first: true
+  current_volume_budget_locked: true
+  current_budget_alignment_verified: true
+  current_batch_ready_to_write: false
+rhythm_plan:
+  chapter_function_mix:
+    main_push: 45-55%
+    transition: 10-20%
+    relationship: 5-10%
+    daily_life: 5-10%
+    information: 10-15%
+    payoff: 10-15%
+  hard_rules:
+    - 前三章必须至少连续两次直给钩子。
+    - 每个小阶段都要有一次看得见的阶段性兑现。
+    - 关系章不能连续吃掉两章以上的主线推进。
+execution_controls:
+  planning_first:
+    required_prewrite_sequence:
+      - platform-lock
+      - stop-loss-lock
+      - total-word-target-lock
+      - chapter-word-target-lock
+      - setting-clarification
+      - mainline-clarification
+      - character-anchor-confirmation
+      - full-volume-plan
+      - stage-map
+      - full-volume-chapter-positioning
+      - current-batch-outline
+  verification_before_completion:
+    require_evidence_before_mark_done: true
+    required_after_current_batch:
+      - writing:meta-check
+      - writing:budget-check
+  root_cause_first:
+    require_issue_classification_before_rewrite: true
+    allowed_rewrite_triggers:
+      - planning-gap
+      - continuity-gap
+      - anchor-gap
+      - knowledge-layer-gap
+      - exposition-gap
+      - pacing-gap
+      - volume-budget-gap
+      - execution-bug
+      - hook-weakness
+knowledge_state:
+  inherit_workspace_workflow: true
+  active_global_profile: default-global
+  active_book_profile: default-book
+  current_batch_id: volume-one-complete-0001-0026-review
+  current_batch_review_required: true
+  current_batch_review_status: pending
+  opening_arc_status: formal-baseline-confirmed
+  next_required_review_at_chapter: 0
+  enabled_rule_sets:
+    - continuity
+    - opening-arc
+    - anchoring
+    - exposition
+    - pacing
+    - hook-strength
+last_outputs:
+  latest_chapter_file: 02-正文/0026-体系第一次站住.md
+  latest_summary_file: ""
+  latest_review_file: ""
+  latest_review_data_file: ""
+  latest_knowledge_candidates_file: ""
+  latest_sync_source: 02-正文/0026-体系第一次站住.md
+sync:
+  auto_sync_enabled: true
+  root_source: 00-设定
+  include_patterns:
+    - "*.md"
+    - "*.txt"
+  exclude_patterns:
+    - .git/**
+    - node_modules/**
+    - dist/**
+proposal_commit:
+  auto_commit_low_risk: true
+  require_manual_commit_for:
+    - factual-conflict
+    - timeline-conflict
+    - major-relationship-shift
+    - rule-break
