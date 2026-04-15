@@ -20,3 +20,4 @@ storage/sync-smoke/
 storage/tmp/
 config/machine-overrides.local.json
 books/.gitkeep
+books/*/03-中间产物/

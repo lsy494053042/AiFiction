@@ -1,0 +1,263 @@
+book_id: 玲珑花绣
+title: 玲珑花绣
+starter_profile_key: qidian-male-longform
+genre: 男频网文
+platform: 起点中文网（男频）
+stage: planning
+status: planning
+active_volume: 1
+active_chapter: 1
+paths:
+  root_dir: .
+  settings_dir: 00-设定
+  outlines_dir: 01-大纲
+  chapters_dir: 02-正文
+  artifacts_dir: 03-中间产物
+source_of_truth:
+  project_brief: 00-设定/作品定位.md
+  world_settings: 00-设定/世界设定.md
+  character_settings: 00-设定/角色设定.md
+  master_outline: 01-大纲/全书大纲.md
+  documents:
+    - doc_kind: setting-index
+      template_key: custom
+      relative_path: 00-设定/设定文档索引.md
+      scope: project
+      is_source_of_truth: true
+      priority: 105
+      sync_policy: manual
+    - doc_kind: project-brief
+      template_key: project-brief
+      relative_path: 00-设定/作品定位.md
+      scope: project
+      is_source_of_truth: true
+      priority: 100
+      sync_policy: manual
+    - doc_kind: world-setting
+      template_key: world-setting
+      relative_path: 00-设定/世界设定.md
+      scope: world
+      is_source_of_truth: true
+      priority: 90
+      sync_policy: manual
+    - doc_kind: character-setting
+      template_key: character-setting
+      relative_path: 00-设定/角色设定.md
+      scope: character
+      is_source_of_truth: true
+      priority: 80
+      sync_policy: manual
+    - doc_kind: organization-setting
+      template_key: organization-ecology
+      relative_path: 00-设定/组织生态设定.md
+      scope: organization
+      is_source_of_truth: true
+      priority: 75
+      sync_policy: manual
+    - doc_kind: ability-setting
+      template_key: custom
+      relative_path: 00-设定/玲珑花绣能力设定.md
+      scope: power-system
+      is_source_of_truth: true
+      priority: 74
+      sync_policy: manual
+    - doc_kind: canon-usage-rules
+      template_key: custom
+      relative_path: 00-设定/猎人世界使用规则.md
+      scope: world
+      is_source_of_truth: true
+      priority: 73
+      sync_policy: manual
+    - doc_kind: meteor-city-opening
+      template_key: custom
+      relative_path: 00-设定/流星街开局设定.md
+      scope: world
+      is_source_of_truth: true
+      priority: 72
+      sync_policy: manual
+    - doc_kind: voice-and-behavior-rules
+      template_key: custom
+      relative_path: 00-设定/人物声线与行为规则.md
+      scope: character
+      is_source_of_truth: true
+      priority: 72
+      sync_policy: manual
+    - doc_kind: writing-style-rules
+      template_key: custom
+      relative_path: 00-设定/写作风格与猎人味道.md
+      scope: style
+      is_source_of_truth: true
+      priority: 72
+      sync_policy: manual
+    - doc_kind: prewrite-checklist
+      template_key: prewrite-checklist
+      relative_path: 00-设定/开写前检查清单.md
+      scope: process
+      is_source_of_truth: true
+      priority: 71
+      sync_policy: manual
+    - doc_kind: outline-master
+      template_key: outline-master
+      relative_path: 01-大纲/全书大纲.md
+      scope: outline
+      is_source_of_truth: true
+      priority: 60
+      sync_policy: manual
+    - doc_kind: outline-early-stage
+      template_key: custom
+      relative_path: 01-大纲/前期阶段大纲.md
+      scope: outline
+      is_source_of_truth: true
+      priority: 59
+      sync_policy: manual
+    - doc_kind: outline-volume-1
+      template_key: custom
+      relative_path: 01-大纲/第一卷章纲.md
+      scope: outline
+      is_source_of_truth: true
+      priority: 58
+      sync_policy: manual
+current_focus:
+  task_type: planning
+  task_label: 第一卷章纲确认
+  goal: 人工确认第一卷章纲和猎人味道写作规则，再进入第 1-5 章正文写作包。
+  summary: 第一卷暂定 36 章，止于晏决离开流星街并获得外界入口；猎人考试只作为执照价值和下一阶段方向露出。
+publication:
+  target_platform: 起点中文网（男频）
+  target_platform_locked: true
+  total_target_word_count: 1000000
+  total_target_word_count_locked: true
+  stop_loss_word_count: 250000
+  stop_loss_word_count_locked: true
+  chapter_target_word_count:
+    min: 2000
+    max: 2500
+    locked: true
+  daily_word_target: 4000
+  update_cadence: 日更
+evaluation_policy:
+  use_workspace_stop_loss_rule: true
+  override_stop_loss_word_count: 250000
+hard_constraints:
+  - 单章目标字数 2000-2500
+  - 分卷按内容优先测算，不先拍章数
+  - 正文前必须先完成整卷规划和全章定位
+  - 主角不是现代穿越者，不知道全职猎人剧情
+  - 原作大事件写就必须让晏决有目标、有行动、有变量、有后果
+  - 重要人物必须有自己的声线和行动逻辑，不能写成功能 NPC
+  - 正文前必须完成本书专属设定底盘和第一卷章纲
+planning_budget:
+  sizing_method: content-first
+  chapter_target_chars:
+    min: 2000
+    max: 2500
+  volume_target:
+    chapters_min: 36
+    chapters_max: 36
+    chars_min: 72000
+    chars_max: 90000
+  budget_gate:
+    require_check_before_next_batch: true
+    current_status: volume-1-outline-drafted
+prewrite_gate:
+  require_full_volume_plan_before_drafting: true
+  current_platform_locked: true
+  current_stop_loss_locked: true
+  current_total_target_locked: true
+  current_chapter_target_locked: true
+  previous_volume_post_review_complete: true
+  previous_volume_text_scan_complete: true
+  previous_volume_sync_complete: true
+  current_volume_plan_complete: true
+  current_stage_map_complete: true
+  current_chapter_function_mix_defined: true
+  current_transition_daily_slots_defined: true
+  current_full_chapter_positioning_complete: true
+  current_batch_outline_complete: true
+  current_volume_sized_by_content_first: true
+  current_volume_budget_locked: true
+  current_budget_alignment_verified: true
+  current_batch_ready_to_write: false
+rhythm_plan:
+  chapter_function_mix:
+    main_push: 45-55%
+    transition: 10-20%
+    relationship: 5-10%
+    daily_life: 5-10%
+    information: 10-15%
+    payoff: 10-15%
+  hard_rules:
+    - 前三章必须至少连续两次直给钩子。
+    - 每个小阶段都要有一次看得见的阶段性兑现。
+    - 关系章不能连续吃掉两章以上的主线推进。
+execution_controls:
+  planning_first:
+    required_prewrite_sequence:
+      - platform-lock
+      - stop-loss-lock
+      - total-word-target-lock
+      - chapter-word-target-lock
+      - volume-budget-content-first
+      - full-volume-plan
+      - stage-map
+      - chapter-function-mix
+      - transition-and-daily-slots
+      - full-volume-chapter-positioning
+      - current-batch-outline
+  verification_before_completion:
+    require_evidence_before_mark_done: true
+    required_after_current_batch:
+      - writing:meta-check
+      - writing:budget-check
+  root_cause_first:
+    require_issue_classification_before_rewrite: true
+    allowed_rewrite_triggers:
+      - planning-gap
+      - continuity-gap
+      - anchor-gap
+      - knowledge-layer-gap
+      - exposition-gap
+      - pacing-gap
+      - volume-budget-gap
+      - execution-bug
+      - hook-weakness
+knowledge_state:
+  inherit_workspace_workflow: true
+  active_global_profile: default-global
+  active_book_profile: 玲珑花绣-opening
+  current_batch_id: volume-1-batch-1
+  current_batch_review_required: false
+  current_batch_review_status: resolved
+  opening_arc_status: in-progress
+  next_required_review_at_chapter: 5
+  enabled_rule_sets:
+    - continuity
+    - opening-arc
+    - anchoring
+    - exposition
+    - pacing
+    - hook-strength
+last_outputs:
+  latest_chapter_file: 03-中间产物/context-packs/writing-pack.20260415-133648.md
+  latest_summary_file: 03-中间产物/latest-summary.md
+  latest_review_file: 03-中间产物/latest-review.md
+  latest_review_data_file: 03-中间产物/latest-review.json
+  latest_knowledge_candidates_file: 03-中间产物/latest-knowledge-candidates.json
+  latest_sync_source: 03-中间产物/context-packs/writing-pack.20260415-133648.md
+sync:
+  auto_sync_enabled: true
+  root_source: .
+  include_patterns:
+    - "*.md"
+    - "*.txt"
+  exclude_patterns:
+    - .git/**
+    - node_modules/**
+    - dist/**
+proposal_commit:
+  auto_commit_low_risk: true
+  require_manual_commit_for:
+    - factual-conflict
+    - timeline-conflict
+    - major-relationship-shift
+    - rule-break

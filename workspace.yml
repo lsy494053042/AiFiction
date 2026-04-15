@@ -2,7 +2,7 @@ workspace_id: aifiction-workspace
 workspace_name: AiFiction Workspace
 root_dir: .
 books_dir: books
-active_book_id: hui-wu-gu-yuan
+active_book_id: 玲珑花绣
 default_book_id: hui-wu-gu-yuan
 book_index:
   - book_id: hui-wu-gu-yuan
@@ -10,6 +10,12 @@ book_index:
     root_path: books/灰雾雇员
     book_file: books/灰雾雇员/book.yml
     stage: drafting
+    status: planning
+  - book_id: 玲珑花绣
+    title: 玲珑花绣
+    root_path: books/玲珑花绣
+    book_file: books/玲珑花绣/book.yml
+    stage: planning
     status: planning
 defaults:
   chapter_file_pattern: "{index:04d}-{title}.md"
