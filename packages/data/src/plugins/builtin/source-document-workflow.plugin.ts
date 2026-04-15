@@ -209,6 +209,7 @@ function collectPrewriteProtocolBlockers(book: BookProtocol, taskType?: string):
   const blockers: string[] = [];
   const prewriteGate = book.prewrite_gate;
   const planningBudget = book.planning_budget;
+  const activeVolume = typeof book.active_volume === "number" ? book.active_volume : 1;
   const volumeTarget = planningBudget?.volume_target;
   const volumeTargetLocked =
     [volumeTarget?.chapters_min, volumeTarget?.chapters_max, volumeTarget?.chars_min, volumeTarget?.chars_max].every(
@@ -235,6 +236,15 @@ function collectPrewriteProtocolBlockers(book: BookProtocol, taskType?: string):
   }
   if (prewriteGate?.current_chapter_target_locked !== true) {
     pushBlocker("单章目标字数尚未锁定。");
+  }
+  if (activeVolume > 1 && prewriteGate?.previous_volume_post_review_complete !== true) {
+    pushBlocker("上一卷卷后复核尚未完成。");
+  }
+  if (activeVolume > 1 && prewriteGate?.previous_volume_text_scan_complete !== true) {
+    pushBlocker("上一卷正文整卷扫描尚未完成。");
+  }
+  if (activeVolume > 1 && prewriteGate?.previous_volume_sync_complete !== true) {
+    pushBlocker("上一卷卷后同步尚未完成。");
   }
   if (prewriteGate?.current_volume_plan_complete !== true) {
     pushBlocker("整卷功能与卷末兑现点尚未确认完成。");

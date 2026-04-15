@@ -233,6 +233,9 @@ interface BookPrewriteGateProtocol {
   current_stop_loss_locked?: boolean;
   current_total_target_locked?: boolean;
   current_chapter_target_locked?: boolean;
+  previous_volume_post_review_complete?: boolean;
+  previous_volume_text_scan_complete?: boolean;
+  previous_volume_sync_complete?: boolean;
   current_volume_plan_complete?: boolean;
   current_stage_map_complete?: boolean;
   current_chapter_function_mix_defined?: boolean;
@@ -1211,6 +1214,12 @@ export class WorkspaceProtocolService {
           prewriteGate?.current_total_target_locked ??
           Boolean(starterProfile?.total_target_word_count ?? publication?.total_target_word_count),
         current_chapter_target_locked: prewriteGate?.current_chapter_target_locked ?? true,
+        previous_volume_post_review_complete:
+          prewriteGate?.previous_volume_post_review_complete ?? ((existing?.active_volume ?? 1) <= 1),
+        previous_volume_text_scan_complete:
+          prewriteGate?.previous_volume_text_scan_complete ?? ((existing?.active_volume ?? 1) <= 1),
+        previous_volume_sync_complete:
+          prewriteGate?.previous_volume_sync_complete ?? ((existing?.active_volume ?? 1) <= 1),
         current_volume_plan_complete: prewriteGate?.current_volume_plan_complete ?? false,
         current_stage_map_complete: prewriteGate?.current_stage_map_complete ?? false,
         current_chapter_function_mix_defined: prewriteGate?.current_chapter_function_mix_defined ?? false,
@@ -1430,6 +1439,9 @@ export class WorkspaceProtocolService {
       `- 当前止损线已锁定：${prewriteGate?.current_stop_loss_locked ? "是" : "否"}`,
       `- 当前总字数已锁定：${prewriteGate?.current_total_target_locked ? "是" : "否"}`,
       `- 当前单章字数已锁定：${prewriteGate?.current_chapter_target_locked ? "是" : "否"}`,
+      `- 上一卷卷后复核完成：${prewriteGate?.previous_volume_post_review_complete ? "是" : "否"}`,
+      `- 上一卷正文整卷扫描完成：${prewriteGate?.previous_volume_text_scan_complete ? "是" : "否"}`,
+      `- 上一卷卷后同步完成：${prewriteGate?.previous_volume_sync_complete ? "是" : "否"}`,
       `- 当前卷规划完成：${prewriteGate?.current_volume_plan_complete ? "是" : "否"}`,
       `- 当前阶段地图完成：${prewriteGate?.current_stage_map_complete ? "是" : "否"}`,
       `- 当前章节功能配比完成：${prewriteGate?.current_chapter_function_mix_defined ? "是" : "否"}`,
@@ -1690,6 +1702,7 @@ export class WorkspaceProtocolService {
     const blockers: string[] = [];
     const prewriteGate = book.prewrite_gate;
     const planningBudget = book.planning_budget;
+    const activeVolume = typeof book.active_volume === "number" ? book.active_volume : 1;
     const volumeTarget = planningBudget?.volume_target;
     const volumeTargetLocked =
       [volumeTarget?.chapters_min, volumeTarget?.chapters_max, volumeTarget?.chars_min, volumeTarget?.chars_max].every(
@@ -1716,6 +1729,15 @@ export class WorkspaceProtocolService {
     }
     if (prewriteGate?.current_chapter_target_locked !== true) {
       pushBlocker("单章目标字数尚未锁定。");
+    }
+    if (activeVolume > 1 && prewriteGate?.previous_volume_post_review_complete !== true) {
+      pushBlocker("上一卷卷后复核尚未完成。");
+    }
+    if (activeVolume > 1 && prewriteGate?.previous_volume_text_scan_complete !== true) {
+      pushBlocker("上一卷正文整卷扫描尚未完成。");
+    }
+    if (activeVolume > 1 && prewriteGate?.previous_volume_sync_complete !== true) {
+      pushBlocker("上一卷卷后同步尚未完成。");
     }
     if (prewriteGate?.current_volume_plan_complete !== true) {
       pushBlocker("整卷功能与卷末兑现点尚未确认完成。");
