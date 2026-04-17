@@ -3,10 +3,10 @@ title: 玲珑花绣
 starter_profile_key: qidian-male-longform
 genre: 男频网文
 platform: 起点中文网（男频）
-stage: planning
-status: planning
+stage: drafting
+status: drafting
 active_volume: 1
-active_chapter: 1
+active_chapter: 10
 paths:
   root_dir: .
   settings_dir: 00-设定
@@ -118,10 +118,10 @@ source_of_truth:
       priority: 58
       sync_policy: manual
 current_focus:
-  task_type: planning
-  task_label: 第一卷章纲确认
-  goal: 人工确认第一卷章纲和猎人味道写作规则，再进入第 1-5 章正文写作包。
-  summary: 第一卷暂定 36 章，止于晏决离开流星街并获得外界入口；猎人考试只作为执照价值和下一阶段方向露出。
+  task_type: drafting
+  task_label: 第 6-10 章试写
+  goal: 完成第 6-10 章试写，并继续校准流星街前期关系线、卷主线物价值和外界压力口径。
+  summary: 已推进到第一卷 batch-1 第 10 章，当前重点是稳住朽木/阿烬/砾/小钳的交易关系与白箱外界线的第一轮追逼。
 publication:
   target_platform: 起点中文网（男频）
   target_platform_locked: true
@@ -177,7 +177,7 @@ prewrite_gate:
   current_volume_sized_by_content_first: true
   current_volume_budget_locked: true
   current_budget_alignment_verified: true
-  current_batch_ready_to_write: false
+  current_batch_ready_to_write: true
 rhythm_plan:
   chapter_function_mix:
     main_push: 45-55%
@@ -238,7 +238,7 @@ knowledge_state:
     - pacing
     - hook-strength
 last_outputs:
-  latest_chapter_file: 03-中间产物/context-packs/writing-pack.20260415-133648.md
+  latest_chapter_file: 02-正文/0005-搬尸人不数孩子.md
   latest_summary_file: 03-中间产物/latest-summary.md
   latest_review_file: 03-中间产物/latest-review.md
   latest_review_data_file: 03-中间产物/latest-review.json
