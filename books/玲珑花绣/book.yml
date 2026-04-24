@@ -5,8 +5,8 @@ genre: 男频网文
 platform: 起点中文网（男频）
 stage: drafting
 status: drafting
-active_volume: 1
-active_chapter: 10
+active_volume: 3
+active_chapter: 72
 paths:
   root_dir: .
   settings_dir: 00-设定
@@ -89,6 +89,13 @@ source_of_truth:
       is_source_of_truth: true
       priority: 72
       sync_policy: manual
+    - doc_kind: information-release-review
+      template_key: custom
+      relative_path: 00-设定/前十章信息释放与可读性审查.md
+      scope: process
+      is_source_of_truth: true
+      priority: 72
+      sync_policy: manual
     - doc_kind: prewrite-checklist
       template_key: prewrite-checklist
       relative_path: 00-设定/开写前检查清单.md
@@ -117,11 +124,18 @@ source_of_truth:
       is_source_of_truth: true
       priority: 58
       sync_policy: manual
+    - doc_kind: outline-volume-2
+      template_key: custom
+      relative_path: 01-大纲/第二卷章纲.md
+      scope: outline
+      is_source_of_truth: true
+      priority: 57
+      sync_policy: manual
 current_focus:
   task_type: drafting
-  task_label: 第 6-10 章试写
-  goal: 完成第 6-10 章试写，并继续校准流星街前期关系线、卷主线物价值和外界压力口径。
-  summary: 已推进到第一卷 batch-1 第 10 章，当前重点是稳住朽木/阿烬/砾/小钳的交易关系与白箱外界线的第一轮追逼。
+  task_label: 第二卷回扫完成，第三卷完整章纲待建
+  goal: 第二卷正文和整卷回扫已完成；下一步先规划第三卷完整章纲，禁止直接开正文。
+  summary: 第二卷 0037-0072 已完成并回扫，内容覆盖港口城、猎人考试外围、正式考试、猎物岛、最终面试和执照收束。卷尾已接到友克鑫、地下拍卖、白箱、旧牌局和砾线索。下一步先拆友克鑫信息秩序，再完成第三卷完整章纲。
 publication:
   target_platform: 起点中文网（男频）
   target_platform_locked: true
@@ -142,10 +156,11 @@ hard_constraints:
   - 单章目标字数 2000-2500
   - 分卷按内容优先测算，不先拍章数
   - 正文前必须先完成整卷规划和全章定位
+  - 每卷开正文前必须完成当前卷完整章纲，禁止只做前十章或批次章纲就开正文
   - 主角不是现代穿越者，不知道全职猎人剧情
   - 原作大事件写就必须让晏决有目标、有行动、有变量、有后果
   - 重要人物必须有自己的声线和行动逻辑，不能写成功能 NPC
-  - 正文前必须完成本书专属设定底盘和第一卷章纲
+  - 正文前必须完成本书专属设定底盘和当前卷完整章纲
 planning_budget:
   sizing_method: content-first
   chapter_target_chars:
@@ -158,7 +173,7 @@ planning_budget:
     chars_max: 90000
   budget_gate:
     require_check_before_next_batch: true
-    current_status: volume-1-outline-drafted
+    current_status: volume-2-full-review-complete-pending-volume-3-plan
 prewrite_gate:
   require_full_volume_plan_before_drafting: true
   current_platform_locked: true
@@ -168,16 +183,16 @@ prewrite_gate:
   previous_volume_post_review_complete: true
   previous_volume_text_scan_complete: true
   previous_volume_sync_complete: true
-  current_volume_plan_complete: true
-  current_stage_map_complete: true
-  current_chapter_function_mix_defined: true
-  current_transition_daily_slots_defined: true
-  current_full_chapter_positioning_complete: true
-  current_batch_outline_complete: true
-  current_volume_sized_by_content_first: true
-  current_volume_budget_locked: true
-  current_budget_alignment_verified: true
-  current_batch_ready_to_write: true
+  current_volume_plan_complete: false
+  current_stage_map_complete: false
+  current_chapter_function_mix_defined: false
+  current_transition_daily_slots_defined: false
+  current_full_chapter_positioning_complete: false
+  current_batch_outline_complete: false
+  current_volume_sized_by_content_first: false
+  current_volume_budget_locked: false
+  current_budget_alignment_verified: false
+  current_batch_ready_to_write: false
 rhythm_plan:
   chapter_function_mix:
     main_push: 45-55%
@@ -225,7 +240,7 @@ knowledge_state:
   inherit_workspace_workflow: true
   active_global_profile: default-global
   active_book_profile: 玲珑花绣-opening
-  current_batch_id: volume-1-batch-1
+  current_batch_id: volume-3-planning
   current_batch_review_required: false
   current_batch_review_status: resolved
   opening_arc_status: in-progress
@@ -238,9 +253,11 @@ knowledge_state:
     - pacing
     - hook-strength
 last_outputs:
-  latest_chapter_file: 02-正文/0005-搬尸人不数孩子.md
+  latest_chapter_file: 02-正文/0072-第一张执照.md
+  latest_volume_review_file: 03-中间产物/第二卷回扫记录.md
+  latest_outline_file: 01-大纲/第二卷章纲.md
   latest_summary_file: 03-中间产物/latest-summary.md
-  latest_review_file: 03-中间产物/latest-review.md
+  latest_review_file: 03-中间产物/第二卷回扫记录.md
   latest_review_data_file: 03-中间产物/latest-review.json
   latest_knowledge_candidates_file: 03-中间产物/latest-knowledge-candidates.json
   latest_sync_source: 03-中间产物/context-packs/writing-pack.20260415-133648.md
